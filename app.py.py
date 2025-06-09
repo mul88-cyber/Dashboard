@@ -1,119 +1,97 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 
-# ----------------------------
-# Konfigurasi halaman
-# ----------------------------
-st.set_page_config(
-    page_title="Dashboard Analisis Saham Indonesia",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="Dashboard Analisis Saham Indonesia", layout="wide")
 
-# ----------------------------
-# Load data dari GCS (public URL)
-# ----------------------------
+# ------------------------ Load Data ------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv")
-    df["Date"] = pd.to_datetime(df["Date"])
+    sector = pd.read_csv("https://storage.googleapis.com/stock-csvku/sector.csv")
+    
+    # Gunakan kolom tanggal yang benar
+    if "Last Trading Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Last Trading Date"])
+    else:
+        st.error("❌ Kolom 'Last Trading Date' tidak ditemukan.")
+        st.stop()
+
+    df = df.merge(sector, how="left", on="Stock Code")
+    df = df.sort_values("Date")
     return df
 
-@st.cache_data
-def load_sector_data():
-    sector_df = pd.read_csv("https://storage.googleapis.com/stock-csvku/sector.csv")
-    return sector_df
-
-# ----------------------------
-# Format angka ribuan
-# ----------------------------
-def format_angka(x):
-    return f"{x:,.0f}" if isinstance(x, (int, float, np.integer, np.float64)) else x
-
-# ----------------------------
-# Load data
-# ----------------------------
 df = load_data()
-sector_df = load_sector_data()
 
-# Gabungkan sektor ke data utama
-df = df.merge(sector_df, on="Stock Code", how="left")
+# ------------------------ Watchlist & Filter ------------------------
+st.title("📈 Dashboard Analisis Saham Indonesia")
 
-# ----------------------------
-# Sidebar filter
-# ----------------------------
-st.sidebar.title("📌 Filter")
-pilih_tanggal = st.sidebar.date_input("Pilih Tanggal", df["Date"].max())
-pilih_saham = st.sidebar.multiselect("Pilih Saham", df["Stock Code"].unique())
+with st.sidebar:
+    st.header("📌 Watchlist")
+    all_stocks = sorted(df["Stock Code"].dropna().unique())
+    watchlist = st.multiselect("Pilih saham untuk watchlist:", all_stocks, default=["BBRI", "BBCA", "TLKM"])
+    df_watch = df[df["Stock Code"].isin(watchlist)]
 
-# Filter data berdasarkan input
-filtered_df = df[df["Date"] == pd.to_datetime(pilih_tanggal)]
+    st.divider()
+    st.markdown("🗓️ **Filter Mingguan**")
+    selected_week = st.date_input("Pilih tanggal akhir minggu:", value=pd.Timestamp(df["Date"].max()))
+    df_week = df[df["Date"] >= selected_week - pd.Timedelta(days=7)]
 
-if pilih_saham:
-    filtered_df = filtered_df[filtered_df["Stock Code"].isin(pilih_saham)]
+# ------------------------ Weekly Accumulation ------------------------
+st.subheader("🧠 Akumulasi Mingguan")
 
-# ----------------------------
-# Header
-# ----------------------------
-st.markdown("# 📊 Dashboard Analisis Saham Indonesia")
+akumulasi = (
+    df_week.groupby("Stock Code")
+    .agg({"Value": "sum", "Foreign Buy": "sum", "Foreign Sell": "sum"})
+    .assign(Net_Foreign=lambda x: x["Foreign Buy"] - x["Foreign Sell"])
+    .sort_values("Net_Foreign", ascending=False)
+)
 
-# ----------------------------
-# Watchlist / Tabel Ringkas
-# ----------------------------
-st.subheader("📋 Tabel Saham Terpilih")
-tabel_ringkas = filtered_df[[
-    "Date", "Stock Code", "Close", "Volume", "Value",
-    "Foreign Buy", "Foreign Sell", "Net Foreign", "Sector"
-]].copy()
+st.dataframe(akumulasi.style.format(thousands=","), use_container_width=True)
 
-tabel_ringkas = tabel_ringkas.sort_values(by="Net Foreign", ascending=False)
-tabel_ringkas = tabel_ringkas.fillna(0)
-tabel_ringkas = tabel_ringkas.applymap(format_angka)
+# ------------------------ Sektor Heatmap ------------------------
+st.subheader("🌐 Heatmap Sektor (Net Foreign Flow)")
 
-st.dataframe(tabel_ringkas, use_container_width=True)
-
-# ----------------------------
-# Sektor Heatmap
-# ----------------------------
-st.subheader("🔥 Heatmap Volume per Sektor")
-sector_volume = (
-    filtered_df.groupby("Sector")["Volume"]
-    .sum()
+sector_heatmap = (
+    df_week.groupby("Sector")
+    .agg({"Foreign Buy": "sum", "Foreign Sell": "sum"})
+    .assign(Net_Foreign=lambda x: x["Foreign Buy"] - x["Foreign Sell"])
     .reset_index()
-    .sort_values(by="Volume", ascending=False)
 )
-sector_volume["Volume"] = sector_volume["Volume"].apply(format_angka)
-st.dataframe(sector_volume, use_container_width=True)
 
-# ----------------------------
-# Top Net Buy (Big Player)
-# ----------------------------
-st.subheader("🏦 Top Saham Net Buy")
-top_net_buy = (
-    filtered_df.sort_values(by="Net Foreign", ascending=False)
-    [["Stock Code", "Net Foreign", "Foreign Buy", "Foreign Sell"]]
-    .head(10)
+fig = px.density_heatmap(
+    sector_heatmap,
+    x="Sector",
+    y=["Net_Foreign"],
+    z="Net_Foreign",
+    color_continuous_scale="RdYlGn",
+    title="Net Foreign Flow per Sektor",
 )
-top_net_buy = top_net_buy.fillna(0)
-top_net_buy = top_net_buy.applymap(format_angka)
-st.dataframe(top_net_buy, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True)
 
-# ----------------------------
-# Alert Saham Menarik
-# ----------------------------
-st.subheader("🚨 Saham Potensi Akumulasi (Alert)")
-alert_df = filtered_df[
-    (filtered_df["Net Foreign"] > 1_000_000_000) & (filtered_df["Volume"] > 10_000_000)
-]
-alert_df = alert_df[["Stock Code", "Net Foreign", "Volume", "Value"]]
-alert_df = alert_df.sort_values(by="Net Foreign", ascending=False)
-alert_df = alert_df.fillna(0)
-alert_df = alert_df.applymap(format_angka)
-st.dataframe(alert_df, use_container_width=True)
+# ------------------------ Notifikasi Saham Menarik ------------------------
+st.subheader("🚨 Alert Saham Menarik")
 
-# ----------------------------
-# Footer
-# ----------------------------
-st.markdown("---")
-st.caption("Dibuat oleh AI untuk analisis pasar saham Indonesia. Data berdasarkan `hasil_gabungan.csv` dan `sector.csv` dari GCS.")
+latest = df[df["Date"] == df["Date"].max()]
+latest["Net Foreign"] = latest["Foreign Buy"] - latest["Foreign Sell"]
+
+alerts = latest[(latest["Net Foreign"] > 5_000_000_000) & (latest["Value"] > 10_000_000_000)]
+alerts = alerts[["Date", "Stock Code", "Value", "Foreign Buy", "Foreign Sell", "Net Foreign"]]
+st.dataframe(alerts.style.format(thousands=","), use_container_width=True)
+
+# ------------------------ Tabel Watchlist ------------------------
+st.subheader("📋 Data Watchlist")
+
+if not df_watch.empty:
+    latest_watch = df_watch[df_watch["Date"] == df_watch["Date"].max()]
+    latest_watch["Net Foreign"] = latest_watch["Foreign Buy"] - latest_watch["Foreign Sell"]
+    st.dataframe(
+        latest_watch[["Date", "Stock Code", "Close", "Volume", "Value", "Foreign Buy", "Foreign Sell", "Net Foreign"]]
+        .sort_values("Net Foreign", ascending=False)
+        .style.format(thousands=","),
+        use_container_width=True
+    )
+else:
+    st.info("Pilih saham di watchlist terlebih dahulu.")
+
