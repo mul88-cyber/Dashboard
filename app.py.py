@@ -11,7 +11,7 @@ def load_data():
     df = pd.read_csv("https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv")
     sector = pd.read_csv("https://storage.googleapis.com/stock-csvku/sector.csv")
     
-    # Gunakan kolom tanggal yang benar
+    # Pastikan kolom tanggal benar dan bertipe datetime
     if "Last Trading Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Last Trading Date"])
     else:
@@ -36,6 +36,7 @@ with st.sidebar:
     st.divider()
     st.markdown("🗓️ **Filter Mingguan**")
     selected_week = st.date_input("Pilih tanggal akhir minggu:", value=pd.Timestamp(df["Date"].max()))
+    selected_week = pd.Timestamp(selected_week)  # Convert ke pandas Timestamp agar bisa operasi timedelta
     df_week = df[df["Date"] >= selected_week - pd.Timedelta(days=7)]
 
 # ------------------------ Weekly Accumulation ------------------------
@@ -73,7 +74,7 @@ st.plotly_chart(fig, use_container_width=True)
 # ------------------------ Notifikasi Saham Menarik ------------------------
 st.subheader("🚨 Alert Saham Menarik")
 
-latest = df[df["Date"] == df["Date"].max()]
+latest = df[df["Date"] == df["Date"].max()].copy()
 latest["Net Foreign"] = latest["Foreign Buy"] - latest["Foreign Sell"]
 
 alerts = latest[(latest["Net Foreign"] > 5_000_000_000) & (latest["Value"] > 10_000_000_000)]
@@ -84,7 +85,7 @@ st.dataframe(alerts.style.format(thousands=","), use_container_width=True)
 st.subheader("📋 Data Watchlist")
 
 if not df_watch.empty:
-    latest_watch = df_watch[df_watch["Date"] == df_watch["Date"].max()]
+    latest_watch = df_watch[df_watch["Date"] == df_watch["Date"].max()].copy()
     latest_watch["Net Foreign"] = latest_watch["Foreign Buy"] - latest_watch["Foreign Sell"]
     st.dataframe(
         latest_watch[["Date", "Stock Code", "Close", "Volume", "Value", "Foreign Buy", "Foreign Sell", "Net Foreign"]]
@@ -94,4 +95,3 @@ if not df_watch.empty:
     )
 else:
     st.info("Pilih saham di watchlist terlebih dahulu.")
-
