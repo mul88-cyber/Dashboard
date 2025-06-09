@@ -1,96 +1,73 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
+import altair as alt
 
-st.set_page_config(page_title="Dashboard Analisis Saham Indonesia", layout="wide")
+# URL data di GCS
+DATA_URL = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
 
-# ------------------------ Load Data ------------------------
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_data():
-    df = pd.read_csv("https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv")
-    sector = pd.read_csv("https://storage.googleapis.com/sector-csv/sector.csv")  # ← Ganti bucket di sini
-    
-    if "Last Trading Date" in df.columns:
-        df["Date"] = pd.to_datetime(df["Last Trading Date"])
-    else:
-        st.error("❌ Kolom 'Last Trading Date' tidak ditemukan.")
-        st.stop()
-
-    df = df.merge(sector, how="left", on="Stock Code")
-    df = df.sort_values("Date")
+    df = pd.read_csv(DATA_URL, parse_dates=["Last Trading Date"])
+    df["Volume"] = pd.to_numeric(df["Volume"], errors='coerce')
+    df["Close"] = pd.to_numeric(df["Close"], errors='coerce')
+    df["VWAP"] = pd.to_numeric(df["VWAP"], errors='coerce')
+    df["Foreign Buy"] = pd.to_numeric(df["Foreign Buy"], errors='coerce')
+    df["Foreign Sell"] = pd.to_numeric(df["Foreign Sell"], errors='coerce')
     return df
 
+# Load data
 df = load_data()
+st.title("📈 Stock Analysis Dashboard")
 
-# ------------------------ Watchlist & Filter ------------------------
-st.title("📈 Dashboard Analisis Saham Indonesia")
-
+# Sidebar filter
 with st.sidebar:
-    st.header("📌 Watchlist")
-    all_stocks = sorted(df["Stock Code"].dropna().unique())
-    watchlist = st.multiselect("Pilih saham untuk watchlist:", all_stocks, default=["BBRI", "BBCA", "TLKM"])
-    df_watch = df[df["Stock Code"].isin(watchlist)]
+    st.header("🔍 Filter")
+    selected_date = st.date_input("Tanggal", df["Last Trading Date"].max())
+    selected_signal = st.multiselect("Signal", df["Signal"].unique(), default=["Akumulasi"])
+    unusual_only = st.checkbox("Volume Mencurigakan", value=True)
+    foreign_flow = st.multiselect("Foreign Flow", df["Foreign Flow"].unique(), default=df["Foreign Flow"].unique())
 
-    st.divider()
-    st.markdown("🗓️ **Filter Mingguan**")
-    selected_week = st.date_input("Pilih tanggal akhir minggu:", value=pd.Timestamp(df["Date"].max()))
-    selected_week = pd.Timestamp(selected_week)
-    df_week = df[df["Date"] >= selected_week - pd.Timedelta(days=7)]
+# Filter data
+filtered_df = df[df["Last Trading Date"] == pd.to_datetime(selected_date)]
+filtered_df = filtered_df[filtered_df["Signal"].isin(selected_signal)]
+if unusual_only:
+    filtered_df = filtered_df[filtered_df["Unusual Volume"] == True]
+filtered_df = filtered_df[filtered_df["Foreign Flow"].isin(foreign_flow)]
 
-# ------------------------ Weekly Accumulation ------------------------
-st.subheader("🧠 Akumulasi Mingguan")
-
-akumulasi = (
-    df_week.groupby("Stock Code")
-    .agg({"Value": "sum", "Foreign Buy": "sum", "Foreign Sell": "sum"})
-    .assign(Net_Foreign=lambda x: x["Foreign Buy"] - x["Foreign Sell"])
-    .sort_values("Net_Foreign", ascending=False)
+# Tampilkan hasil screener
+st.subheader("📊 Hasil Screener Saham")
+st.dataframe(
+    filtered_df[["Stock Code", "Company Name", "Close", "VWAP", "Volume", "Signal", "Foreign Flow"]]
+    .sort_values("Volume", ascending=False)
+    .reset_index(drop=True),
+    use_container_width=True
 )
 
-st.dataframe(akumulasi.style.format(thousands=","), use_container_width=True)
+# Pilih saham untuk analisis visual
+st.subheader("📌 Analisis Per Saham")
+unique_stocks = df["Stock Code"].unique()
+selected_stock = st.selectbox("Pilih Saham", sorted(unique_stocks))
+stock_df = df[df["Stock Code"] == selected_stock].sort_values("Last Trading Date")
 
-# ------------------------ Sektor Heatmap ------------------------
-st.subheader("🌐 Heatmap Sektor (Net Foreign Flow)")
-
-sector_heatmap = (
-    df_week.groupby("Sector")
-    .agg({"Foreign Buy": "sum", "Foreign Sell": "sum"})
-    .assign(Net_Foreign=lambda x: x["Foreign Buy"] - x["Foreign Sell"])
-    .reset_index()
+# Chart harga dan VWAP
+st.markdown("### Harga vs VWAP")
+chart_data = stock_df[["Last Trading Date", "Close", "VWAP"]].melt("Last Trading Date")
+st.altair_chart(
+    alt.Chart(chart_data).mark_line().encode(
+        x="Last Trading Date:T", y="value:Q", color="variable:N"
+    ).properties(height=300),
+    use_container_width=True
 )
 
-fig = px.density_heatmap(
-    sector_heatmap,
-    x="Sector",
-    y=["Net_Foreign"],
-    z="Net_Foreign",
-    color_continuous_scale="RdYlGn",
-    title="Net Foreign Flow per Sektor",
-)
-st.plotly_chart(fig, use_container_width=True)
+# Foreign flow dan volume
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("### Foreign Buy/Sell")
+    st.line_chart(stock_df.set_index("Last Trading Date")[[
+        "Foreign Buy", "Foreign Sell"]])
+with col2:
+    st.markdown("### Volume")
+    st.bar_chart(stock_df.set_index("Last Trading Date")["Volume"])
 
-# ------------------------ Notifikasi Saham Menarik ------------------------
-st.subheader("🚨 Alert Saham Menarik")
-
-latest = df[df["Date"] == df["Date"].max()].copy()
-latest["Net Foreign"] = latest["Foreign Buy"] - latest["Foreign Sell"]
-
-alerts = latest[(latest["Net Foreign"] > 5_000_000_000) & (latest["Value"] > 10_000_000_000)]
-alerts = alerts[["Date", "Stock Code", "Value", "Foreign Buy", "Foreign Sell", "Net Foreign"]]
-st.dataframe(alerts.style.format(thousands=","), use_container_width=True)
-
-# ------------------------ Tabel Watchlist ------------------------
-st.subheader("📋 Data Watchlist")
-
-if not df_watch.empty:
-    latest_watch = df_watch[df_watch["Date"] == df_watch["Date"].max()].copy()
-    latest_watch["Net Foreign"] = latest_watch["Foreign Buy"] - latest_watch["Foreign Sell"]
-    st.dataframe(
-        latest_watch[["Date", "Stock Code", "Close", "Volume", "Value", "Foreign Buy", "Foreign Sell", "Net Foreign"]]
-        .sort_values("Net Foreign", ascending=False)
-        .style.format(thousands=","),
-        use_container_width=True
-    )
-else:
-    st.info("Pilih saham di watchlist terlebih dahulu.")
+st.caption("Data sumber: Google Cloud Storage (hasil_gabungan.csv)")
