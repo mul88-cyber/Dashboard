@@ -1,73 +1,101 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import altair as alt
 
-# URL data di GCS
-DATA_URL = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
+# URL file di GCS
+CSV_URL = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
+SEKTOR_CSV = "https://storage.googleapis.com/stock-csvku/sector.csv"
+
+st.set_page_config(page_title="📈 Dashboard Saham", layout="wide")
+st.title("📊 Dashboard Analisis Saham Indonesia")
 
 @st.cache_data(ttl=3600)
 def load_data():
-    df = pd.read_csv(DATA_URL, parse_dates=["Last Trading Date"])
-    df["Volume"] = pd.to_numeric(df["Volume"], errors='coerce')
-    df["Close"] = pd.to_numeric(df["Close"], errors='coerce')
-    df["VWAP"] = pd.to_numeric(df["VWAP"], errors='coerce')
-    df["Foreign Buy"] = pd.to_numeric(df["Foreign Buy"], errors='coerce')
-    df["Foreign Sell"] = pd.to_numeric(df["Foreign Sell"], errors='coerce')
+    df = pd.read_csv(CSV_URL)
+    df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
+    df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
+    df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+    df['VWAP'] = pd.to_numeric(df['VWAP'], errors='coerce')
+    df['Foreign Buy'] = pd.to_numeric(df['Foreign Buy'], errors='coerce')
+    df['Foreign Sell'] = pd.to_numeric(df['Foreign Sell'], errors='coerce')
+    df['Volume'] = df['Volume'].fillna(0)
     return df
 
-# Load data
+@st.cache_data(ttl=3600)
+def load_sector():
+    try:
+        df_sector = pd.read_csv(SEKTOR_CSV)
+        return df_sector
+    except:
+        return pd.DataFrame()
+
 df = load_data()
-st.title("📈 Stock Analysis Dashboard")
+df_sector = load_sector()
 
-# Sidebar filter
-with st.sidebar:
-    st.header("🔍 Filter")
-    selected_date = st.date_input("Tanggal", df["Last Trading Date"].max())
-    selected_signal = st.multiselect("Signal", df["Signal"].unique(), default=["Akumulasi"])
-    unusual_only = st.checkbox("Volume Mencurigakan", value=True)
-    foreign_flow = st.multiselect("Foreign Flow", df["Foreign Flow"].unique(), default=df["Foreign Flow"].unique())
+# Gabungkan data sektor jika tersedia
+if not df_sector.empty:
+    df = df.merge(df_sector, on='Stock Code', how='left')
 
-# Filter data
-filtered_df = df[df["Last Trading Date"] == pd.to_datetime(selected_date)]
-filtered_df = filtered_df[filtered_df["Signal"].isin(selected_signal)]
-if unusual_only:
-    filtered_df = filtered_df[filtered_df["Unusual Volume"] == True]
-filtered_df = filtered_df[filtered_df["Foreign Flow"].isin(foreign_flow)]
+# Format angka ribuan
+def format_angka(x):
+    return f"{int(x):,}" if pd.notna(x) and isinstance(x, (int, float)) else "-"
 
-# Tampilkan hasil screener
-st.subheader("📊 Hasil Screener Saham")
+# --- 📌 Watchlist Saham ---
+st.subheader("📌 Watchlist Saham Potensial")
+watchlist = df[(df["Signal"] == "Akumulasi") & (df["Foreign Flow"] == "Inflow")]
 st.dataframe(
-    filtered_df[["Stock Code", "Company Name", "Close", "VWAP", "Volume", "Signal", "Foreign Flow"]]
-    .sort_values("Volume", ascending=False)
-    .reset_index(drop=True),
-    use_container_width=True
+    watchlist[["Stock Code", "Company Name", "Sector", "Close", "VWAP", "Volume", "Signal", "Foreign Flow"]]
+    .sort_values(by="Volume", ascending=False)
+    .head(20)
+    .style.format({
+        "Close": format_angka,
+        "VWAP": format_angka,
+        "Volume": format_angka,
+    })
 )
 
-# Pilih saham untuk analisis visual
-st.subheader("📌 Analisis Per Saham")
-unique_stocks = df["Stock Code"].unique()
-selected_stock = st.selectbox("Pilih Saham", sorted(unique_stocks))
-stock_df = df[df["Stock Code"] == selected_stock].sort_values("Last Trading Date")
+# --- 🔥 Heatmap Sektor ---
+st.subheader("🔥 Heatmap Sektor Berdasarkan Volume")
+if 'Sector' in df.columns:
+    sector_summary = df.groupby("Sector").agg({
+        "Volume": "sum",
+        "Stock Code": "nunique"
+    }).rename(columns={"Stock Code": "Jumlah Saham"}).sort_values(by="Volume", ascending=False)
 
-# Chart harga dan VWAP
-st.markdown("### Harga vs VWAP")
-chart_data = stock_df[["Last Trading Date", "Close", "VWAP"]].melt("Last Trading Date")
-st.altair_chart(
-    alt.Chart(chart_data).mark_line().encode(
-        x="Last Trading Date:T", y="value:Q", color="variable:N"
-    ).properties(height=300),
-    use_container_width=True
-)
+    st.bar_chart(sector_summary["Volume"])
+    st.dataframe(sector_summary.style.format({"Volume": format_angka}))
+else:
+    st.warning("📌 File sektor belum bisa digunakan. Pastikan `Sector` ada di data.")
 
-# Foreign flow dan volume
-col1, col2 = st.columns(2)
-with col1:
-    st.markdown("### Foreign Buy/Sell")
-    st.line_chart(stock_df.set_index("Last Trading Date")[[
-        "Foreign Buy", "Foreign Sell"]])
-with col2:
-    st.markdown("### Volume")
-    st.bar_chart(stock_df.set_index("Last Trading Date")["Volume"])
+# --- 📆 Analisis Mingguan ---
+st.subheader("📆 Analisis Volume & Foreign Flow Mingguan")
+selected_stock = st.selectbox("Pilih Saham", sorted(df["Stock Code"].unique()))
+stock_df = df[df["Stock Code"] == selected_stock]
 
-st.caption("Data sumber: Google Cloud Storage (hasil_gabungan.csv)")
+# Pastikan kolom mingguan ada
+if "Week" in stock_df.columns:
+    weekly = stock_df.groupby("Week").agg({
+        "Volume": "sum",
+        "Foreign Buy": "sum",
+        "Foreign Sell": "sum"
+    }).reset_index()
+
+    st.line_chart(weekly.set_index("Week")[["Volume", "Foreign Buy", "Foreign Sell"]])
+else:
+    st.warning("❗ Kolom 'Week' belum ada. Tambahkan jika ingin analisis mingguan.")
+
+# --- 📣 Notifikasi Saham Menarik ---
+st.subheader("📣 Alert Saham dengan Volume Tidak Wajar")
+if "Unusual Volume" in df.columns:
+    alert_df = df[df["Unusual Volume"] == True]
+    st.dataframe(
+        alert_df[["Stock Code", "Company Name", "Sector", "Close", "Volume", "Signal", "Foreign Flow", "Last Trading Date"]]
+        .sort_values(by="Volume", ascending=False)
+        .head(20)
+        .style.format({
+            "Close": format_angka,
+            "Volume": format_angka,
+        })
+    )
+else:
+    st.warning("❗ Kolom 'Unusual Volume' belum tersedia dalam data.")
