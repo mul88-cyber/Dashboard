@@ -9,9 +9,8 @@ st.set_page_config(page_title="Dashboard Analisis Saham Indonesia", layout="wide
 @st.cache_data
 def load_data():
     df = pd.read_csv("https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv")
-    sector = pd.read_csv("https://storage.googleapis.com/stock-csvku/sector.csv")
+    sector = pd.read_csv("https://storage.googleapis.com/sector-csv/sector.csv")  # ← Ganti bucket di sini
     
-    # Pastikan kolom tanggal benar dan bertipe datetime
     if "Last Trading Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Last Trading Date"])
     else:
@@ -36,7 +35,7 @@ with st.sidebar:
     st.divider()
     st.markdown("🗓️ **Filter Mingguan**")
     selected_week = st.date_input("Pilih tanggal akhir minggu:", value=pd.Timestamp(df["Date"].max()))
-    selected_week = pd.Timestamp(selected_week)  # Convert ke pandas Timestamp agar bisa operasi timedelta
+    selected_week = pd.Timestamp(selected_week)
     df_week = df[df["Date"] >= selected_week - pd.Timedelta(days=7)]
 
 # ------------------------ Weekly Accumulation ------------------------
