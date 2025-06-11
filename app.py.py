@@ -9,7 +9,7 @@ from datetime import datetime
 
 # --- Konfigurasi Halaman ---
 st.set_page_config(page_title="Dashboard Saham", layout="wide")
-st.title("📊 Dashboard Analisis Saham Top Picks")
+st.title("📊 Dashboard Analisis Top Picks")
 
 # --- Load Data ---
 CSV_URL = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv" 
