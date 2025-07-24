@@ -115,32 +115,62 @@ with tab2:
 
 with tab5:
     st.subheader("💰 Analisis Mingguan: Money Flow & Foreign Flow")
-    st.markdown("Grafik ini membandingkan total nilai transaksi (Money Flow) dengan aliran dana asing bersih (Net Foreign Flow) setiap minggu.")
+    st.markdown("Grafik combo untuk membandingkan total nilai transaksi (bar) dengan tren aliran dana asing bersih (garis) setiap minggu.")
 
-    # --- [PERUBAHAN] Filter Bertingkat ---
     col1, col2 = st.columns(2)
     with col1:
-        # Filter 1: Pilih Sektor
         unique_sectors = sorted(df['Sector'].unique())
         selected_sector = st.selectbox("Langkah 1: Pilih Sektor", unique_sectors)
-
     with col2:
-        # Filter 2: Pilihan Saham menyesuaikan dengan Sektor
         stocks_in_sector = sorted(df[df['Sector'] == selected_sector]['Stock Code'].unique())
         selected_stock_flow = st.selectbox("Langkah 2: Pilih Stock Code", stocks_in_sector)
-    # --- Akhir Perubahan ---
-
+    
     if selected_stock_flow:
         filtered_flow = weekly_flow_df[weekly_flow_df['Stock Code'] == selected_stock_flow].sort_values('Week')
         if not filtered_flow.empty:
+            
+            # --- [PERBAIKAN TOTAL] Membuat Combo Chart (Bar + Line) ---
             fig_flow = make_subplots(specs=[[{"secondary_y": True}]])
-            fig_flow.add_trace(go.Bar(x=filtered_flow['Week'], y=filtered_flow['Total_Money_Flow'], name='Money Flow (Nilai Transaksi)', marker_color='royalblue'), secondary_y=False)
-            colors = ['green' if val >= 0 else 'red' for val in filtered_flow['Total_Net_Foreign']]
-            fig_flow.add_trace(go.Bar(x=filtered_flow['Week'], y=filtered_flow['Total_Net_Foreign'], name='Net Foreign Flow', marker_color=colors), secondary_y=True)
-            fig_flow.update_layout(title_text=f"Aliran Dana Mingguan untuk {selected_stock_flow}", xaxis_title='Minggu (Tahun-Minggu ke-)', barmode='group', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+
+            # 1. Money Flow sebagai Bar Chart di sumbu Y utama (kiri)
+            fig_flow.add_trace(
+                go.Bar(
+                    x=filtered_flow['Week'], 
+                    y=filtered_flow['Total_Money_Flow'], 
+                    name='Money Flow (Nilai Transaksi)',
+                    marker_color='royalblue',
+                    opacity=0.7
+                ),
+                secondary_y=False,
+            )
+
+            # 2. Net Foreign Flow sebagai Line Chart di sumbu Y kedua (kanan)
+            fig_flow.add_trace(
+                go.Scatter(
+                    x=filtered_flow['Week'], 
+                    y=filtered_flow['Total_Net_Foreign'], 
+                    name='Net Foreign Flow (Tren)',
+                    mode='lines+markers',
+                    line=dict(color='white', width=2),
+                    marker=dict(size=8)
+                ),
+                secondary_y=True,
+            )
+            
+            # Tambahkan garis horizontal di angka 0 untuk mempermudah melihat Inflow/Outflow
+            fig_flow.add_hline(y=0, line_width=1, line_dash="dash", line_color="grey", secondary_y=True)
+
+            # Update Layout
+            fig_flow.update_layout(
+                title_text=f"Aliran Dana Mingguan untuk {selected_stock_flow}",
+                xaxis_title='Minggu (Tahun-Minggu ke-)',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
             fig_flow.update_yaxes(title_text="<b>Money Flow</b> (Nilai)", secondary_y=False)
             fig_flow.update_yaxes(title_text="<b>Net Foreign Flow</b> (Nilai)", secondary_y=True)
+
             st.plotly_chart(fig_flow, use_container_width=True)
+            # --- Akhir Perbaikan ---
         else:
             st.warning("Tidak ada data aliran dana mingguan untuk saham yang dipilih.")
 
