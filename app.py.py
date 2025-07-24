@@ -17,18 +17,22 @@ def load_data():
         df = pd.read_csv(csv_url)
         df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
 
-        # Kolom numerik yang akan dikonversi, termasuk 'Frequency' dari data asli
+        # Kolom numerik yang akan dikonversi
         numeric_cols = ['Volume', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency']
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # Menambahkan data sektor (karena tidak ada di file asli)
+        # Menambahkan data sektor
         sektors = ['FINANCE', 'TECHNOLOGY', 'INFRASTRUCTURE', 'ENERGY', 'HEALTHCARE', 'INDUSTRY', 'CONSUMER']
         df['Sector'] = df.groupby('Stock Code')['Stock Code'].transform(lambda x: sektors[hash(x.name) % len(sektors)])
+
+        # PERBAIKAN: Lakukan fillna SEBELUM mengubah tipe data ke 'category'
+        df.fillna(0, inplace=True)
+
+        # Setelah dipastikan tidak ada nilai kosong, baru ubah tipe data
         df['Sector'] = df['Sector'].astype('category')
 
         df.sort_values(by=["Stock Code", "Last Trading Date"], inplace=True)
-        df.fillna(0, inplace=True)
         return df
     except Exception as e:
         st.error(f"Gagal memuat data dari URL: {e}")
