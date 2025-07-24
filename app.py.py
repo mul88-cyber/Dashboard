@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. Konfigurasi Halaman (Layout Wide & Judul) ---
+# --- Konfigurasi Halaman ---
 st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
 st.title("🚀 Dashboard Analisis Saham Pro")
 
@@ -66,18 +66,30 @@ st.sidebar.header("🔍 Filter")
 st.sidebar.divider()
 
 if not df.empty:
-    # --- 2. Hapus Filter Sektor, Langsung ke Kode Saham ---
     all_stocks = sorted(df['Stock Code'].unique())
     selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
 
     stock_data = df[df["Stock Code"] == selected_stock]
 
-    available_weeks = sorted(stock_data['Week'].unique(), reverse=True)
-    selected_weeks = st.sidebar.multiselect(
-        "2. Pilih Minggu (bisa lebih dari satu)",
-        options=available_weeks,
-        default=available_weeks[:4] if len(available_weeks) > 4 else available_weeks
-    )
+    # --- PERBAIKAN KUNCI: Mengurutkan minggu dengan benar ---
+    if not stock_data.empty and 'Week' in stock_data.columns:
+        # 1. Dapatkan daftar minggu unik beserta tanggal terakhirnya
+        week_mapping = stock_data.groupby('Week')['Last Trading Date'].max().reset_index()
+        # 2. Urutkan berdasarkan tanggal terakhir (terbaru ke terlama)
+        sorted_weeks_df = week_mapping.sort_values(by='Last Trading Date', ascending=False)
+        # 3. Ambil daftar nama minggunya yang sudah terurut
+        available_weeks = sorted_weeks_df['Week'].tolist()
+
+        selected_weeks = st.sidebar.multiselect(
+            "2. Pilih Minggu (bisa lebih dari satu)",
+            options=available_weeks,
+            default=available_weeks[:4] if len(available_weeks) > 4 else available_weeks
+        )
+    else:
+        available_weeks = []
+        selected_weeks = []
+        st.sidebar.warning("Data saham ini tidak memiliki kolom 'Week'.")
+
 
     st.sidebar.divider()
     if st.sidebar.button("🔄 Perbarui Data", use_container_width=True):
