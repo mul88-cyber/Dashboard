@@ -1,37 +1,34 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # --- Konfigurasi Halaman ---
-st.set_page_config(page_title="Dashboard Saham Simple", layout="wide")
-st.title("📊 Dashboard Analisis Saham Sederhana")
+st.set_page_config(page_title="Dashboard Saham Optimal", layout="wide")
+st.title("🚀 Dashboard Analisis Saham Optimal")
 
-# --- Load Data (menggunakan cache agar cepat) ---
+# --- Load Data ---
 @st.cache_data(ttl=3600)
 def load_data():
-    """
-    Memuat data dari URL, mengkonversi tipe data, dan menambahkan data sektor.
-    """
+    """Memuat dan membersihkan data dari URL."""
     csv_url = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
     try:
         df = pd.read_csv(csv_url)
         df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
-
-        # Kolom numerik yang akan dikonversi
+        
+        # Kolom numerik yang dibutuhkan
         numeric_cols = ['Volume', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency']
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # Menambahkan data sektor
+        # Menambahkan data sektor (dummy)
         sektors = ['FINANCE', 'TECHNOLOGY', 'INFRASTRUCTURE', 'ENERGY', 'HEALTHCARE', 'INDUSTRY', 'CONSUMER']
         df['Sector'] = df.groupby('Stock Code')['Stock Code'].transform(lambda x: sektors[hash(x.name) % len(sektors)])
-
-        # PERBAIKAN: Lakukan fillna SEBELUM mengubah tipe data ke 'category'
+        
+        # Mengisi nilai kosong sebelum mengubah tipe data untuk menghindari error
         df.fillna(0, inplace=True)
-
-        # Setelah dipastikan tidak ada nilai kosong, baru ubah tipe data
         df['Sector'] = df['Sector'].astype('category')
-
+        
         df.sort_values(by=["Stock Code", "Last Trading Date"], inplace=True)
         return df
     except Exception as e:
@@ -40,128 +37,88 @@ def load_data():
 
 df = load_data()
 
-# --- Sidebar untuk Filter ---
+# --- Sidebar Filter ---
 st.sidebar.header("🔍 Filter Data")
-
 if not df.empty:
-    # Filter Sektor
-    unique_sectors = sorted(df['Sector'].unique())
-    selected_sector = st.sidebar.selectbox(
-        "Langkah 1: Pilih Sektor",
-        options=unique_sectors
-    )
-
-    # Filter Kode Saham (berdasarkan sektor yang dipilih)
+    selected_sector = st.sidebar.selectbox("Pilih Sektor", sorted(df['Sector'].unique()))
     stocks_in_sector = sorted(df[df['Sector'] == selected_sector]['Stock Code'].unique())
-    selected_stock = st.sidebar.selectbox(
-        "Langkah 2: Pilih Kode Saham",
-        options=stocks_in_sector
-    )
-
-    # Tombol Refresh
+    selected_stock = st.sidebar.selectbox("Pilih Kode Saham", stocks_in_sector)
+    
     if st.sidebar.button("🔄 Perbarui Data"):
         st.cache_data.clear()
         st.rerun()
 
-    # Filter data utama berdasarkan pilihan user
-    stock_data = df[df["Stock Code"] == selected_stock].copy()
-
+    stock_data = df[df["Stock Code"] == selected_stock]
 else:
-    st.warning("Gagal memuat data saham. Aplikasi tidak dapat berjalan.")
-    selected_stock = None
+    st.warning("Gagal memuat data. Aplikasi tidak dapat berjalan.")
     stock_data = pd.DataFrame()
 
-# --- Membuat Tab ---
-tab_harian, tab_mingguan = st.tabs(["Analisis Harian", "Analisis Mingguan"])
+# --- Fungsi Grafik ---
+def create_combined_chart(data, x_axis_col, title):
+    """Membuat grafik gabungan untuk Harga, Volume, dan Frekuensi."""
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-# --- Fungsi untuk membuat grafik ---
-def create_charts(data, title_suffix):
-    """
-    Membuat 4 grafik terpisah untuk Close, Volume, Foreign Flow, dan Frequency.
-    """
-    if data.empty:
-        st.warning(f"Tidak ada data {title_suffix} untuk saham {selected_stock}.")
-        return
+    # Sumbu Y Kiri: Volume (Bar) & Frequency (Bar)
+    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Volume'], name='Volume', marker_color='royalblue', opacity=0.5), secondary_y=False)
+    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Frequency'], name='Frequency', marker_color='orange', opacity=0.5), secondary_y=False)
 
-    st.subheader(f"Grafik {title_suffix} untuk {selected_stock}")
+    # Sumbu Y Kanan: Close Price (Line)
+    fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Close'], name='Close Price', line=dict(color='white', width=2)), secondary_y=True)
 
-    # 1. Grafik Harga Penutupan (Close Price)
-    fig_close = go.Figure()
-    fig_close.add_trace(go.Scatter(
-        x=data['Last Trading Date'], y=data['Close'],
-        mode='lines', name='Close Price', line=dict(color='cyan', width=2)
-    ))
-    fig_close.update_layout(
-        title='Harga Penutupan (Close Price)',
-        yaxis_title='Harga (Rp)', height=350, template='plotly_dark'
+    fig.update_layout(
+        title_text=title,
+        template='plotly_dark',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        barmode='stack'
     )
-    st.plotly_chart(fig_close, use_container_width=True)
+    fig.update_yaxes(title_text="Volume & Frekuensi", secondary_y=False)
+    fig.update_yaxes(title_text="Harga Penutupan (Rp)", secondary_y=True, showgrid=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-    # 2. Grafik Volume
-    fig_vol = go.Figure()
-    fig_vol.add_trace(go.Bar(
-        x=data['Last Trading Date'], y=data['Volume'],
-        name='Volume', marker_color='royalblue'
-    ))
-    fig_vol.update_layout(
-        title='Volume Transaksi',
-        yaxis_title='Jumlah Lembar Saham', height=350, template='plotly_dark'
-    )
-    st.plotly_chart(fig_vol, use_container_width=True)
-
-    # 3. Grafik Aliran Dana Asing (Foreign Flow)
-    fig_foreign = go.Figure()
-    fig_foreign.add_trace(go.Bar(
-        x=data['Last Trading Date'], y=data['Foreign Buy'],
-        name='Foreign Buy', marker_color='green'
-    ))
-    fig_foreign.add_trace(go.Bar(
-        x=data['Last Trading Date'], y=data['Foreign Sell'],
-        name='Foreign Sell', marker_color='red'
-    ))
-    fig_foreign.update_layout(
+def create_foreign_flow_chart(data, x_axis_col, title):
+    """Membuat grafik khusus untuk Foreign Flow."""
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Buy'], name='Foreign Buy', marker_color='green'))
+    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Sell'], name='Foreign Sell', marker_color='red'))
+    fig.update_layout(
+        title_text=title,
         barmode='group',
-        title='Aliran Dana Asing (Foreign Flow)',
-        yaxis_title='Nilai Transaksi', height=350, template='plotly_dark'
+        template='plotly_dark',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
-    st.plotly_chart(fig_foreign, use_container_width=True)
+    fig.update_yaxes(title_text="Nilai Transaksi")
+    st.plotly_chart(fig, use_container_width=True)
 
-    # 4. Grafik Frekuensi
-    fig_freq = go.Figure()
-    fig_freq.add_trace(go.Bar(
-        x=data['Last Trading Date'], y=data['Frequency'],
-        name='Frequency', marker_color='orange'
-    ))
-    fig_freq.update_layout(
-        title='Frekuensi Transaksi',
-        yaxis_title='Jumlah Transaksi', height=350, template='plotly_dark'
-    )
-    st.plotly_chart(fig_freq, use_container_width=True)
+# --- Tampilan Utama dengan Tab ---
+tab_harian, tab_mingguan = st.tabs(["📈 Analisis Harian", "📅 Analisis Mingguan"])
 
-# --- Konten Tab Harian ---
 with tab_harian:
-    if selected_stock and not stock_data.empty:
-        # Menampilkan data 90 hari terakhir untuk default view
+    if not stock_data.empty:
+        st.header(f"Analisis Harian: {selected_stock}")
+        # Menampilkan 90 hari terakhir untuk default view
         daily_data = stock_data[stock_data['Last Trading Date'] >= (stock_data['Last Trading Date'].max() - pd.Timedelta(days=90))]
-        create_charts(daily_data, "Harian")
+        create_combined_chart(daily_data, 'Last Trading Date', "Harga, Volume, & Frekuensi Harian")
+        create_foreign_flow_chart(daily_data, 'Last Trading Date', "Aliran Dana Asing Harian")
     else:
-        st.info("Silakan pilih saham di sidebar untuk memulai analisis.")
+        st.info("Silakan pilih saham di sidebar.")
 
-# --- Konten Tab Mingguan ---
 with tab_mingguan:
-    if selected_stock and not stock_data.empty:
-        # Mengelompokkan data per minggu. 'W-FRI' berarti akhir minggu adalah hari Jumat.
-        stock_data_weekly = stock_data.set_index('Last Trading Date').resample('W-FRI').agg({
-            'Close': 'last',
-            'Volume': 'sum',
-            'Foreign Buy': 'sum',
-            'Foreign Sell': 'sum',
-            'Frequency': 'sum'
-        }).reset_index()
+    if not stock_data.empty and 'Week' in stock_data.columns:
+        st.header(f"Analisis Mingguan: {selected_stock}")
+        
+        # Agregasi data mingguan menggunakan kolom 'Week'
+        weekly_data = stock_data.groupby('Week').agg(
+            Close=('Close', 'last'),
+            Volume=('Volume', 'sum'),
+            Foreign_Buy=('Foreign Buy', 'sum'),
+            Foreign_Sell=('Foreign Sell', 'sum'),
+            Frequency=('Frequency', 'sum')
+        ).reset_index()
 
-        # Menghapus minggu yang tidak memiliki data (misal: di awal periode)
-        stock_data_weekly = stock_data_weekly[stock_data_weekly['Volume'] > 0]
-
-        create_charts(stock_data_weekly, "Mingguan")
+        # Rename kolom agar sesuai dengan fungsi chart
+        weekly_data.rename(columns={'Foreign_Buy': 'Foreign Buy', 'Foreign_Sell': 'Foreign Sell'}, inplace=True)
+        
+        create_combined_chart(weekly_data, 'Week', "Harga, Volume, & Frekuensi Mingguan")
+        create_foreign_flow_chart(weekly_data, 'Week', "Aliran Dana Asing Mingguan")
     else:
-        st.info("Silakan pilih saham di sidebar untuk memulai analisis.")
+        st.info("Silakan pilih saham di sidebar atau data tidak memiliki kolom 'Week'.")
