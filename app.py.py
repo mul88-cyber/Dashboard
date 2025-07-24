@@ -31,8 +31,7 @@ df = load_data()
 # --- Fungsi Grafik Final ---
 def create_aligned_chart(data, x_axis_col, title):
     """
-    Membuat grafik combo dengan sumbu nol yang sejajar secara visual
-    menggunakan metode rentang proporsional yang stabil.
+    Membuat grafik combo dengan urutan tumpukan bar yang sudah disesuaikan.
     """
     if data.empty:
         st.warning("Tidak ada data untuk rentang minggu yang dipilih.")
@@ -43,32 +42,33 @@ def create_aligned_chart(data, x_axis_col, title):
         vertical_spacing=0.05, row_heights=[0.7, 0.3],
         specs=[[{"secondary_y": True}], [{}]])
 
-    # Grafik Atas: Harga & Volume
-    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Local Volume'], name='Lokal', marker_color='#1f77b4'), row=1, col=1)
+    # --- Urutan Tumpukan Bar Baru ---
+    # 1. Paling Bawah: Asing Beli (hijau)
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Buy'], name='Asing Beli', marker_color='#2ca02c'), row=1, col=1)
+    # 2. Tengah: Asing Jual (merah)
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Sell'], name='Asing Jual', marker_color='#d62728'), row=1, col=1)
+    # 3. Paling Atas: Lokal (biru)
+    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Local Volume'], name='Lokal', marker_color='#1f77b4'), row=1, col=1)
+    
+    # Garis harga tetap sama
     fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Close'], name='Harga', line=dict(color='white', width=2)), secondary_y=True, row=1, col=1)
 
-    # Grafik Bawah: Frekuensi
+    # Grafik Bawah: Frekuensi (tetap sama)
     fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Frequency'], name='Frekuensi',
                            mode='lines', line=dict(color='#ff7f0e', width=2), fill='tozeroy'), row=2, col=1)
 
-    # --- PERBAIKAN FINAL: Logika Rentang Sumbu Y Proporsional ---
+    # Logika untuk rentang sumbu Y proporsional (tetap sama)
     max_vol = data['Volume'].max() if not data['Volume'].empty else 1
     max_price = data['Close'].max() if not data['Close'].empty else 1
     min_price = data['Close'].min() if not data['Close'].empty else 0
 
-    # Handle kasus jika semua harga sama untuk menghindari pembagian dengan nol
     if max_price == min_price:
         price_range_min = min_price * 0.95
         price_range_max = max_price * 1.05
     else:
-        # Data harga akan menempati 70% bagian atas dari total rentang sumbu Y-nya
         proportion = 0.70
         price_data_range = max_price - min_price
         price_total_range = price_data_range / proportion
-        
-        # Tambahkan sedikit padding di atas
         price_range_max = max_price + (price_data_range * 0.05)
         price_range_min = price_range_max - price_total_range
 
@@ -78,8 +78,6 @@ def create_aligned_chart(data, x_axis_col, title):
     )
     fig.update_xaxes(tickfont_size=12)
     fig.update_yaxes(title_font_size=16, tickfont_size=12)
-
-    # Terapkan rentang yang sudah dihitung
     fig.update_yaxes(title_text="Volume", secondary_y=False, row=1, col=1, range=[0, max_vol * 1.05])
     fig.update_yaxes(title_text="Harga (Rp)", secondary_y=True, row=1, col=1, showgrid=False, range=[price_range_min, price_range_max])
     fig.update_yaxes(title_text="Frekuensi", row=2, col=1)
