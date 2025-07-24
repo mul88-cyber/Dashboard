@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from textwrap import wrap
-import seaborn as sns
-import matplotlib.pyplot as plt
 from datetime import datetime
 
 # --- Konfigurasi Halaman ---
@@ -18,24 +16,26 @@ CSV_URL = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
 def load_data():
     df = pd.read_csv(CSV_URL)
     df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
-    df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce').fillna(0)
-    df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
-    df['VWAP'] = pd.to_numeric(df['VWAP'], errors='coerce')
-    df['Foreign Buy'] = pd.to_numeric(df['Foreign Buy'], errors='coerce')
-    df['Foreign Sell'] = pd.to_numeric(df['Foreign Sell'], errors='coerce')
+    # Konversi kolom numerik, paksa error menjadi NaN, lalu isi dengan 0
+    numeric_cols = ['Volume', 'Close', 'VWAP', 'Foreign Buy', 'Foreign Sell', 'Change', 'Previous']
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
     
     # --- [BARU] Simulasi Data Sektor untuk Heatmap ---
     # PENTING: Ganti bagian ini dengan data sektor riil Anda.
-    # Jika Anda punya file CSV lain (misal: stock_sectors.csv) yang berisi 'Stock Code' dan 'Sector',
-    # Anda bisa merge di sini.
     sektors = ['FINANCE', 'TECHNOLOGY', 'INFRASTRUCTURE', 'ENERGY', 'HEALTHCARE', 'INDUSTRY', 'CONSUMER']
-    np.random.seed(42) # Agar hasil random konsisten
+    np.random.seed(42)
     df['Sector'] = np.random.choice(sektors, size=len(df))
     # --- Akhir Bagian Simulasi ---
     
     return df
 
 df = load_data()
+
+# --- [FIX] Kalkulasi Kolom 'Change %' ---
+# Hitung 'Change %' secara manual dan tangani pembagian dengan nol
+df['Change %'] = np.where(df['Previous'] != 0, (df['Change'] / df['Previous']) * 100, 0)
+df.fillna(0, inplace=True) # Isi sisa NaN di seluruh dataframe dengan 0
 
 # --- Format Angka ---
 def format_angka(x):
@@ -91,7 +91,7 @@ if st.sidebar.button("🔄 Perbarui Data"):
 st.sidebar.info("Dashboard ini menampilkan data historis dan analisis teknikal dasar. Selalu lakukan riset mandiri (DYOR).")
 
 # --- Tab Navigation ---
-tab1, tab2, tab3, tab4 = st.tabs(["🏆 Top 20 Picks", "Sector Analysis", "Grafik Volume & Harga", "Analisis Teknikal Lengkap"])
+tab1, tab2, tab3, tab4 = st.tabs(["🏆 Top 20 Picks", "🔥 Analisis Sektoral", "📊 Grafik Volume & Harga", "📉 Analisis Teknikal Lengkap"])
 
 with tab1:
     st.subheader("🏆 Top 20 Picks Saham Hari Ini")
@@ -107,7 +107,6 @@ with tab1:
     csv = convert_df(top_picks)
     st.download_button("📥 Download Top Picks", data=csv, file_name="top_picks.csv", mime="text/csv")
     
-    # Alert Saham Mencurigakan dipindah ke sini agar relevan dengan Top Picks
     alert_stocks = scored_df[
         (scored_df["Unusual Volume"] == 1) &
         (scored_df["Foreign Flow"] == "Inflow")
@@ -120,7 +119,7 @@ with tab2:
     st.subheader("🔥 Heatmap Performa Sektoral Harian")
     st.markdown("Menunjukkan performa rata-rata (perubahan harga) dari setiap sektor pada hari perdagangan terakhir. Hijau berarti positif, Merah berarti negatif.")
     
-    if 'Sector' in daily_data.columns:
+    if 'Sector' in daily_data.columns and 'Change %' in daily_data.columns:
         sector_performance = daily_data.groupby('Sector')['Change %'].mean().sort_values(ascending=False)
 
         fig_heatmap = go.Figure(go.Heatmap(
@@ -128,14 +127,14 @@ with tab2:
                            x=sector_performance.index,
                            y=['Performa %'],
                            colorscale='RdYlGn',
-                           zmin=-2, zmax=2, # Atur rentang warna agar lebih sensitif
+                           zmin=-2, zmax=2, 
                            text=[f'{p:.2f}%' for p in sector_performance.values],
                            texttemplate="%{text}",
                            textfont={"size":12}))
         fig_heatmap.update_layout(title='Performa Rata-Rata Sektor Hari Ini', height=300)
         st.plotly_chart(fig_heatmap, use_container_width=True)
     else:
-        st.info("Data sektor tidak ditemukan. Mohon tambahkan kolom 'Sector' di data sumber Anda.")
+        st.info("Data sektor atau 'Change %' tidak ditemukan.")
 
 with tab3:
     st.subheader("📊 Grafik Volume (Foreign vs Lokal) + Harga Penutupan")
@@ -174,25 +173,21 @@ with tab4:
         filtered_tech.sort_values("Last Trading Date", inplace=True)
         
         # --- Hitung Indikator Teknikal ---
-        # Moving Averages
         filtered_tech['SMA_20'] = filtered_tech['Close'].rolling(window=20).mean()
         filtered_tech['SMA_50'] = filtered_tech['Close'].rolling(window=50).mean()
         
-        # Bollinger Bands
         filtered_tech['BB_Mid'] = filtered_tech['SMA_20']
         filtered_tech['BB_Upper'] = filtered_tech['SMA_20'] + 2 * filtered_tech['Close'].rolling(window=20).std()
         filtered_tech['BB_Lower'] = filtered_tech['SMA_20'] - 2 * filtered_tech['Close'].rolling(window=20).std()
         
-        # MACD
         exp1 = filtered_tech['Close'].ewm(span=12, adjust=False).mean()
         exp2 = filtered_tech['Close'].ewm(span=26, adjust=False).mean()
         filtered_tech['MACD'] = exp1 - exp2
         filtered_tech['MACD_Signal'] = filtered_tech['MACD'].ewm(span=9, adjust=False).mean()
         
-        # RSI
         delta = filtered_tech['Close'].diff(1)
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
+        gain = delta.where(delta > 0, 0).fillna(0)
+        loss = -delta.where(delta < 0, 0).fillna(0)
         avg_gain = gain.rolling(window=14).mean()
         avg_loss = loss.rolling(window=14).mean()
         rs = avg_gain / avg_loss
