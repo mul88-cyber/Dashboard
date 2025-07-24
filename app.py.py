@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -7,32 +8,35 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
 st.title("🚀 Dashboard Analisis Saham Pro")
 
-# --- Load Data ---
+# --- Load Data & Kalkulasi ---
 @st.cache_data(ttl=3600)
 def load_data():
-    """Memuat, membersihkan, dan menghitung indikator teknikal."""
+    """Memuat, membersihkan, dan menghitung semua indikator yang dibutuhkan."""
     csv_url = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
     try:
         df = pd.read_csv(csv_url)
         df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
-        numeric_cols = ['Volume', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency']
+        
+        # PERBAIKAN: Tambahkan 'Value' ke kolom numerik dan hapus perhitungan manual
+        numeric_cols = ['Volume', 'Value', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency', 'Change', 'Previous']
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         df.fillna(0, inplace=True)
         
-        # --- KALKULASI BARU ---
-        # Hitung Value Perdagangan
-        df['TradeValue'] = df['Close'] * df['Volume']
+        # --- KALKULASI INDIKATOR ---
+        # 1. Hitung Change %
+        df['Change %'] = np.where(df['Previous'] != 0, (df['Change'] / df['Previous']) * 100, 0)
         
-        # Hitung Moving Average untuk Volume dan Value per saham
+        # 2. Hitung Moving Average menggunakan 'Value' asli
         df = df.sort_values(by=['Stock Code', 'Last Trading Date'])
-        df['MA3_vol'] = df.groupby('Stock Code')['Volume'].transform(lambda x: x.rolling(window=3).mean())
-        df['MA20_vol'] = df.groupby('Stock Code')['Volume'].transform(lambda x: x.rolling(window=20).mean())
-        df['MA3_val'] = df.groupby('Stock Code')['TradeValue'].transform(lambda x: x.rolling(window=3).mean())
-        df['MA20_val'] = df.groupby('Stock Code')['TradeValue'].transform(lambda x: x.rolling(window=20).mean())
+        df['MA3_vol'] = df.groupby('Stock Code')['Volume'].transform(lambda x: x.rolling(window=3, min_periods=1).mean())
+        df['MA20_vol'] = df.groupby('Stock Code')['Volume'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
+        df['MA3_val'] = df.groupby('Stock Code')['Value'].transform(lambda x: x.rolling(window=3, min_periods=1).mean())
+        df['MA20_val'] = df.groupby('Stock Code')['Value'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
 
-        # Kalkulasi lama tetap ada
+        # 3. Hitung Volume Lokal
         df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
+        
         df.sort_values(by="Last Trading Date", inplace=True)
         return df
     except Exception as e:
@@ -56,11 +60,9 @@ def create_aligned_chart(data, x_axis_col, title):
     max_price = data['Close'].max() if not data['Close'].empty else 1
     min_price = data['Close'].min() if not data['Close'].empty else 0
     if max_price == min_price:
-        price_range_min = min_price * 0.95
-        price_range_max = max_price * 1.05
+        price_range_min, price_range_max = (min_price * 0.95, max_price * 1.05)
     else:
-        proportion = 0.70
-        price_data_range = max_price - min_price
+        proportion, price_data_range = 0.70, max_price - min_price
         price_total_range = price_data_range / proportion
         price_range_max = max_price + (price_data_range * 0.05)
         price_range_min = price_range_max - price_total_range
@@ -76,7 +78,6 @@ def create_aligned_chart(data, x_axis_col, title):
 tab_chart, tab_screener = st.tabs(["📊 Analisis Detail", "🔥 Screener Volume & Value"])
 
 with tab_chart:
-    # --- Sidebar Filter ---
     st.sidebar.header("🔍 Filter Analisis Detail")
     st.sidebar.divider()
     if not df.empty:
@@ -94,8 +95,6 @@ with tab_chart:
         if st.sidebar.button("🔄 Perbarui Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-
-        # --- Tampilan Grafik ---
         if selected_weeks:
             filtered_daily_data = stock_data[stock_data['Week'].isin(selected_weeks)]
             st.header(f"Analisis Harian untuk {selected_stock}")
@@ -109,51 +108,66 @@ with tab_chart:
 with tab_screener:
     st.header("Screener Saham Berdasarkan Lonjakan Volume & Value")
     st.markdown("Cari saham yang menunjukkan aktivitas perdagangan signifikan berdasarkan perbandingan Moving Average (MA).")
-
     if not df.empty:
-        # Ambil data terbaru untuk setiap saham
-        latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()]
-
-        # Opsi Filter
-        col1, col2 = st.columns(2)
+        latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
+        
+        # --- Opsi Filter ---
+        col1, col2, col3 = st.columns(3)
         with col1:
-            filter_vol = st.checkbox("Lonjakan Volume (MA3 > 5x MA20)", value=True)
+            filter_vol = st.checkbox("Filter Lonjakan Volume", value=True)
         with col2:
-            filter_val = st.checkbox("Lonjakan Nilai (MA3 > 5x MA20)", value=False)
+            filter_val = st.checkbox("Filter Lonjakan Nilai", value=False)
+        with col3:
+            multiplier = st.number_input("Minimal Kenaikan (x kali lipat)", min_value=1.0, value=5.0, step=0.5)
+
+        # Hitung faktor pengali
+        latest_data['Vol_Factor'] = (latest_data['MA3_vol'] / latest_data['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
+        latest_data['Val_Factor'] = (latest_data['MA3_val'] / latest_data['MA20_val']).replace([np.inf, -np.inf], 0).fillna(0)
         
         conditions = []
         if filter_vol:
-            conditions.append(latest_data['MA3_vol'] >= 5 * latest_data['MA20_vol'])
+            conditions.append(latest_data['Vol_Factor'] >= multiplier)
         if filter_val:
-            conditions.append(latest_data['MA3_val'] >= 5 * latest_data['MA20_val'])
+            conditions.append(latest_data['Val_Factor'] >= multiplier)
         
         st.divider()
-
         if conditions:
-            # Gabungkan kondisi dengan logika OR
             final_condition = pd.concat(conditions, axis=1).any(axis=1)
-            result_df = latest_data[final_condition]
+            result_df = latest_data[final_condition].copy()
+            
+            # --- SORTING & PENATAAN KOLOM ---
+            result_df.sort_values(by='Vol_Factor', ascending=False, inplace=True)
             
             st.success(f"Ditemukan **{len(result_df)}** saham yang memenuhi kriteria.")
             
-            # Tampilkan hasil
-            display_cols = ['Stock Code', 'Close', 'Volume', 'TradeValue', 'MA3_vol', 'MA20_vol', 'MA3_val', 'MA20_val']
+            display_cols = [
+                'Stock Code', 'Close', 'Change %', 
+                'Volume', 'Vol_Factor', 'MA3_vol', 'MA20_vol', 
+                'Value', 'Val_Factor', 'MA3_val', 'MA20_val' # Menggunakan kolom 'Value' asli
+            ]
             
-            # Format angka agar mudah dibaca
-            styled_df = result_df[display_cols].style.format({
+            rename_cols = {
+                'Stock Code': 'Saham',
+                'Value': 'Value', # Tidak perlu rename, tapi pastikan ada
+                'Vol_Factor': 'Vol x MA20',
+                'Val_Factor': 'Val x MA20'
+            }
+            
+            styled_df = result_df[display_cols].rename(columns=rename_cols).style.format({
                 'Close': "{:,.0f}",
+                'Change %': "{:,.2f}%",
                 'Volume': "{:,.0f}",
-                'TradeValue': "{:,.0f}",
+                'Vol x MA20': "{:,.1f}x",
                 'MA3_vol': "{:,.0f}",
                 'MA20_vol': "{:,.0f}",
+                'Value': "{:,.0f}",
+                'Val x MA20': "{:,.1f}x",
                 'MA3_val': "{:,.0f}",
                 'MA20_val': "{:,.0f}"
-            })
+            }).background_gradient(cmap='Greens', subset=['Vol x MA20', 'Val x MA20'])
             
             st.dataframe(styled_df, use_container_width=True)
-            
         else:
             st.info("Pilih setidaknya satu kriteria di atas untuk memulai screening.")
-
     else:
         st.warning("Data tidak tersedia untuk melakukan screening.")
