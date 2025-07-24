@@ -41,6 +41,7 @@ df = load_data()
 st.sidebar.header("🔍 Filter Data")
 if not df.empty:
     selected_sector = st.sidebar.selectbox("Pilih Sektor", sorted(df['Sector'].unique()))
+    # Menghindari error jika ada stock code kosong
     stocks_in_sector = sorted(df[df['Stock Code'].str.strip() != ''][df['Sector'] == selected_sector]['Stock Code'].unique())
     selected_stock = st.sidebar.selectbox("Pilih Kode Saham", stocks_in_sector)
     
@@ -56,18 +57,22 @@ else:
 # --- Fungsi Grafik Optimal ---
 def create_optimal_chart(data, x_axis_col, title):
     """
-    Membuat grafik combo:
-    - Sumbu Y1 (Kiri): Stacked Bar untuk Volume (Lokal, Asing Beli, Asing Jual)
-    - Sumbu Y2 (Kanan): Line untuk Harga Penutupan & Frekuensi
+    Membuat grafik combo dengan secondary axis yang sudah dideklarasikan dengan benar.
     """
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                        vertical_spacing=0.05, row_heights=[0.7, 0.3])
+    # --- PERBAIKAN KUNCI: Deklarasikan 'specs' untuk mendaftarkan secondary_y ---
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, 
+        vertical_spacing=0.05, row_heights=[0.7, 0.3],
+        specs=[[{"secondary_y": True}],  # Baris 1 punya 2 sumbu Y
+               [{}]])                    # Baris 2 normal
 
     # --- GRAFIK ATAS (Harga & Volume) ---
+    # Sumbu Y1 (Kiri) untuk Volume
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Local Volume'], name='Lokal', marker_color='#1f77b4'), row=1, col=1)
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Buy'], name='Asing Beli', marker_color='#2ca02c'), row=1, col=1)
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Sell'], name='Asing Jual', marker_color='#d62728'), row=1, col=1)
     
+    # Sumbu Y2 (Kanan) untuk Harga
     fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Close'], name='Harga', line=dict(color='white', width=2)), secondary_y=True, row=1, col=1)
 
     # --- GRAFIK BAWAH (Frekuensi) ---
@@ -98,6 +103,7 @@ with tab_harian:
     if not stock_data.empty:
         st.header(f"Analisis Harian: {selected_stock}")
         daily_data = stock_data[stock_data['Last Trading Date'] >= (stock_data['Last Trading Date'].max() - pd.Timedelta(days=120))]
+        # Tab Harian PASTI menggunakan 'Last Trading Date'
         create_optimal_chart(daily_data, 'Last Trading Date', "Analisis Harga, Volume & Frekuensi Harian")
     else:
         st.info("Silakan pilih saham di sidebar.")
@@ -110,16 +116,16 @@ with tab_mingguan:
         weekly_data = stock_data.groupby('Week').agg(
             Last_Date=('Last Trading Date', 'last'), # Ambil tanggal terakhir untuk sorting
             Close=('Close', 'last'),
-            Volume=('Volume', 'sum'),
             Local_Volume=('Local Volume', 'sum'),
             Foreign_Buy=('Foreign Buy', 'sum'),
             Foreign_Sell=('Foreign Sell', 'sum'),
             Frequency=('Frequency', 'sum')
         ).reset_index()
 
-        # PERBAIKAN: Urutkan berdasarkan tanggal terakhir di minggu itu
+        # Mengurutkan berdasarkan tanggal terakhir di minggu itu untuk memastikan urutan benar
         weekly_data.sort_values('Last_Date', inplace=True)
         
+        # Tab Mingguan PASTI menggunakan kolom 'Week'
         create_optimal_chart(weekly_data, 'Week', "Analisis Harga, Volume & Frekuensi Mingguan")
     else:
         st.info("Silakan pilih saham di sidebar.")
