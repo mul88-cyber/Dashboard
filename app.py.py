@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from textwrap import wrap
+from plotly.subplots import make_subplots
 from datetime import datetime
 
 # --- Konfigurasi Halaman ---
@@ -16,32 +16,31 @@ CSV_URL = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
 def load_data():
     df = pd.read_csv(CSV_URL)
     df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
-    # Konversi kolom numerik, paksa error menjadi NaN, lalu isi dengan 0
+    
+    # Konversi kolom numerik, paksa error menjadi NaN
     numeric_cols = ['Volume', 'Close', 'VWAP', 'Foreign Buy', 'Foreign Sell', 'Change', 'Previous']
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce')
     
-    # --- [BARU] Simulasi Data Sektor untuk Heatmap ---
+    # Simulasi Data Sektor untuk Heatmap
     # PENTING: Ganti bagian ini dengan data sektor riil Anda.
     sektors = ['FINANCE', 'TECHNOLOGY', 'INFRASTRUCTURE', 'ENERGY', 'HEALTHCARE', 'INDUSTRY', 'CONSUMER']
-    np.random.seed(42)
+    np.random.seed(42) # Agar hasil random konsisten
     df['Sector'] = np.random.choice(sektors, size=len(df))
-    # --- Akhir Bagian Simulasi ---
     
     return df
 
 df = load_data()
 
-# --- [FIX] Kalkulasi Kolom 'Change %' ---
-# Hitung 'Change %' secara manual dan tangani pembagian dengan nol
+# Kalkulasi Kolom 'Change %' dan penanganan data kosong
 df['Change %'] = np.where(df['Previous'] != 0, (df['Change'] / df['Previous']) * 100, 0)
-df.fillna(0, inplace=True) # Isi sisa NaN di seluruh dataframe dengan 0
+df.fillna(0, inplace=True) # Isi semua sisa NaN di dataframe dengan 0
 
 # --- Format Angka ---
 def format_angka(x):
     return f"{int(x):,}" if pd.notna(x) and isinstance(x, (int, float)) else "-"
 
-# --- Kalkulasi Analitis ---
+# --- Kalkulasi Analitis Tambahan ---
 df.sort_values(by=["Stock Code", "Last Trading Date"], inplace=True)
 df["Avg Volume 5D"] = df.groupby("Stock Code")["Volume"].transform(lambda x: x.rolling(5).mean())
 
@@ -63,7 +62,8 @@ def calculate_score(df):
     df["Score"] = 0
     df["Score"] += (df["Signal"] == "Akumulasi") * 2
     df["Score"] += (df["Foreign Flow"] == "Inflow") * 2
-    df["Score"] += ((df["Volume"] / df["Avg Volume 5D"]) > 1.5).astype(int) * 2
+    # Pastikan Avg Volume 5D tidak nol untuk menghindari error
+    df["Score"] += np.where(df["Avg Volume 5D"] > 0, ((df["Volume"] / df["Avg Volume 5D"]) > 1.5).astype(int) * 2, 0)
     df["Score"] += (df["Close"] <= df["VWAP"]).astype(int)
     df["Score"] += df["Volume Change Positive"].fillna(0).astype(int)
     df["Score"] += df["Unusual Volume"].astype(int)
@@ -86,7 +86,7 @@ st.sidebar.metric("Jumlah Saham Turun", format_angka((daily_data["Change"] < 0).
 
 if st.sidebar.button("🔄 Perbarui Data"):
     st.cache_data.clear()
-    st.experimental_rerun()
+    st.rerun()
 
 st.sidebar.info("Dashboard ini menampilkan data historis dan analisis teknikal dasar. Selalu lakukan riset mandiri (DYOR).")
 
@@ -117,7 +117,7 @@ with tab1:
 
 with tab2:
     st.subheader("🔥 Heatmap Performa Sektoral Harian")
-    st.markdown("Menunjukkan performa rata-rata (perubahan harga) dari setiap sektor pada hari perdagangan terakhir. Hijau berarti positif, Merah berarti negatif.")
+    st.markdown("Menunjukkan performa rata-rata (perubahan harga) dari setiap sektor pada hari perdagangan terakhir.")
     
     if 'Sector' in daily_data.columns and 'Change %' in daily_data.columns:
         sector_performance = daily_data.groupby('Sector')['Change %'].mean().sort_values(ascending=False)
@@ -137,15 +137,15 @@ with tab2:
         st.info("Data sektor atau 'Change %' tidak ditemukan.")
 
 with tab3:
-    st.subheader("📊 Grafik Volume (Foreign vs Lokal) + Harga Penutupan")
-    selected_stock = st.selectbox("Pilih Stock Code", df["Stock Code"].unique(), key="vol_chart_selectbox")
+    st.subheader("📊 Grafik Volume & Harga")
+    selected_stock_vol = st.selectbox("Pilih Stock Code", df["Stock Code"].unique(), key="vol_chart_selectbox")
     
-    if selected_stock:
-        stock_data = df[df["Stock Code"] == selected_stock]
+    if selected_stock_vol:
+        stock_data = df[df["Stock Code"] == selected_stock_vol]
         min_date = stock_data["Last Trading Date"].min().date()
-        max_date = stock_data["Last Trading Date"].max().date()
+        max_date_vol = stock_data["Last Trading Date"].max().date()
 
-        date_range = st.date_input("Pilih Rentang Tanggal", [max_date - pd.Timedelta(days=90), max_date], min_value=min_date, max_value=max_date, key="vol_date_range")
+        date_range = st.date_input("Pilih Rentang Tanggal", [max_date_vol - pd.Timedelta(days=90), max_date_vol], min_value=min_date, max_value=max_date_vol, key="vol_date_range")
 
         if len(date_range) == 2:
             filtered = stock_data[
@@ -156,23 +156,30 @@ with tab3:
             filtered.sort_values("Last Trading Date", inplace=True)
             filtered["Non Foreign Volume"] = filtered["Volume"] - (filtered["Foreign Buy"] + filtered["Foreign Sell"])
 
-            fig = go.Figure()
-            fig.add_trace(go.Bar(x=filtered["Last Trading Date"], y=filtered["Foreign Buy"], name="Foreign Buy", marker_color="green"))
-            fig.add_trace(go.Bar(x=filtered["Last Trading Date"], y=filtered["Foreign Sell"], name="Foreign Sell", marker_color="red"))
-            fig.add_trace(go.Bar(x=filtered["Last Trading Date"], y=filtered["Non Foreign Volume"], name="Lokal (Non-Foreign)", marker_color="royalblue"))
-            fig.add_trace(go.Scatter(x=filtered["Last Trading Date"], y=filtered["Close"], name="Close Price", mode="lines+markers", yaxis="y2", line=dict(color="black", dash="dot")))
-            fig.update_layout(barmode="stack", xaxis_title="Tanggal", yaxis=dict(title="Volume"), yaxis2=dict(title="Close Price", overlaying="y", side="right"), title=f"Analisis Volume & Harga: {selected_stock}", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), height=500)
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.3, 0.7])
+            
+            fig.add_trace(go.Bar(x=filtered["Last Trading Date"], y=filtered["Foreign Buy"], name="Foreign Buy", marker_color="green"), row=1, col=1)
+            fig.add_trace(go.Bar(x=filtered["Last Trading Date"], y=filtered["Foreign Sell"], name="Foreign Sell", marker_color="red"), row=1, col=1)
+            fig.add_trace(go.Bar(x=filtered["Last Trading Date"], y=filtered["Non Foreign Volume"], name="Lokal", marker_color="royalblue"), row=1, col=1)
+
+            fig.add_trace(go.Scatter(x=filtered["Last Trading Date"], y=filtered["Close"], name="Close Price", mode="lines+markers", line=dict(color="white", width=2)), row=2, col=1)
+            
+            fig.update_layout(title_text=f"Analisis Volume & Harga: {selected_stock_vol}", height=600, barmode="stack", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fig.update_yaxes(title_text="Volume", row=1, col=1)
+            fig.update_yaxes(title_text="Close Price", row=2, col=1)
+            fig.update_xaxes(showticklabels=False, row=1, col=1)
+            fig.update_xaxes(title_text="Tanggal", row=2, col=1)
             st.plotly_chart(fig, use_container_width=True)
 
 with tab4:
     st.subheader("📉 Analisis Teknikal Lengkap")
-    selected_stock_tech = st.selectbox("Pilih Saham untuk Analisis Teknikal", df["Stock Code"].unique())
+    selected_stock_tech = st.selectbox("Pilih Saham untuk Analisis Teknikal", df["Stock Code"].unique(), key="tech_selectbox")
 
     if selected_stock_tech:
         filtered_tech = df[df["Stock Code"] == selected_stock_tech].copy()
         filtered_tech.sort_values("Last Trading Date", inplace=True)
         
-        # --- Hitung Indikator Teknikal ---
+        # Hitung Indikator Teknikal
         filtered_tech['SMA_20'] = filtered_tech['Close'].rolling(window=20).mean()
         filtered_tech['SMA_50'] = filtered_tech['Close'].rolling(window=50).mean()
         
@@ -190,28 +197,29 @@ with tab4:
         loss = -delta.where(delta < 0, 0).fillna(0)
         avg_gain = gain.rolling(window=14).mean()
         avg_loss = loss.rolling(window=14).mean()
-        rs = avg_gain / avg_loss
+        # Hindari pembagian dengan nol untuk RSI
+        rs = np.where(avg_loss == 0, np.nan, avg_gain / avg_loss)
         filtered_tech['RSI'] = 100 - (100 / (1 + rs))
 
-        # --- Visualisasi Utama: Harga, MA, Bollinger Bands ---
+        # Visualisasi Utama: Harga, MA, Bollinger Bands
         fig_main = go.Figure()
-        fig_main.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["Close"], name="Close Price", line=dict(color="blue", width=2)))
+        fig_main.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["Close"], name="Close Price", line=dict(color="white", width=2)))
         fig_main.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["SMA_20"], name="SMA 20", line=dict(color="orange", dash='dot')))
-        fig_main.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["SMA_50"], name="SMA 50", line=dict(color="purple", dash='dot')))
+        fig_main.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["SMA_50"], name="SMA 50", line=dict(color="cyan", dash='dot')))
         fig_main.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["BB_Upper"], name="Upper Band", line=dict(color='rgba(152,251,152,0.5)')))
         fig_main.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["BB_Lower"], name="Lower Band", line=dict(color='rgba(152,251,152,0.5)'), fill='tonexty', fillcolor='rgba(152,251,152,0.2)'))
         fig_main.update_layout(title=f"Harga, Moving Averages & Bollinger Bands - {selected_stock_tech}", yaxis_title="Harga", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
         st.plotly_chart(fig_main, use_container_width=True)
         
-        # --- Visualisasi MACD ---
+        # Visualisasi MACD
         fig_macd = go.Figure()
         fig_macd.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["MACD"], name="MACD", line=dict(color='blue')))
         fig_macd.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["MACD_Signal"], name="Signal Line", line=dict(color='red', dash='dot')))
-        fig_macd.add_trace(go.Bar(x=filtered_tech["Last Trading Date"], y=(filtered_tech['MACD'] - filtered_tech['MACD_Signal']), name="Histogram", marker_color='rgba(0,0,0,0.3)'))
+        fig_macd.add_trace(go.Bar(x=filtered_tech["Last Trading Date"], y=(filtered_tech['MACD'] - filtered_tech['MACD_Signal']), name="Histogram", marker_color='rgba(255,255,255,0.3)'))
         fig_macd.update_layout(title="MACD (Moving Average Convergence Divergence)", yaxis_title="Value", height=300)
         st.plotly_chart(fig_macd, use_container_width=True)
 
-        # --- Visualisasi RSI ---
+        # Visualisasi RSI
         fig_rsi = go.Figure()
         fig_rsi.add_trace(go.Scatter(x=filtered_tech["Last Trading Date"], y=filtered_tech["RSI"], name="RSI", line=dict(color="purple")))
         fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)", annotation_position="bottom right")
