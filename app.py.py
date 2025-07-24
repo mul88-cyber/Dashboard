@@ -21,6 +21,7 @@ def load_data():
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
         df.fillna(0, inplace=True)
+        # Menghitung volume lokal dari data yang ada
         df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
         df.sort_values(by="Last Trading Date", inplace=True)
         return df
@@ -52,13 +53,28 @@ def create_optimal_chart(data, x_axis_col, title):
     fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Frequency'], name='Frekuensi',
                            mode='lines', line=dict(color='#ff7f0e', width=2), fill='tozeroy'), row=2, col=1)
 
+    # --- PERBAIKAN: Menambahkan pengaturan ukuran font ---
     fig.update_layout(
-        title_text=title, template='plotly_dark', height=600, barmode='stack',
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        title_text=title,
+        title_font_size=22, # Ukuran font judul utama
+        template='plotly_dark',
+        height=600,
+        barmode='stack',
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+            font=dict(size=14) # Ukuran font legenda
+        )
     )
+    # Atur font untuk semua sumbu Y
+    fig.update_yaxes(title_font_size=16, tickfont_size=12)
+    # Atur font untuk sumbu X
+    fig.update_xaxes(tickfont_size=12)
+
+    # Beri nama spesifik untuk setiap sumbu Y
     fig.update_yaxes(title_text="Volume", secondary_y=False, row=1, col=1)
     fig.update_yaxes(title_text="Harga (Rp)", secondary_y=True, row=1, col=1, showgrid=False)
     fig.update_yaxes(title_text="Frekuensi", row=2, col=1)
+
     st.plotly_chart(fig, use_container_width=True)
 
 # --- Sidebar Filter ---
@@ -71,13 +87,9 @@ if not df.empty:
 
     stock_data = df[df["Stock Code"] == selected_stock]
 
-    # --- PERBAIKAN KUNCI: Mengurutkan minggu dengan benar ---
     if not stock_data.empty and 'Week' in stock_data.columns:
-        # 1. Dapatkan daftar minggu unik beserta tanggal terakhirnya
         week_mapping = stock_data.groupby('Week')['Last Trading Date'].max().reset_index()
-        # 2. Urutkan berdasarkan tanggal terakhir (terbaru ke terlama)
         sorted_weeks_df = week_mapping.sort_values(by='Last Trading Date', ascending=False)
-        # 3. Ambil daftar nama minggunya yang sudah terurut
         available_weeks = sorted_weeks_df['Week'].tolist()
 
         selected_weeks = st.sidebar.multiselect(
@@ -90,7 +102,6 @@ if not df.empty:
         selected_weeks = []
         st.sidebar.warning("Data saham ini tidak memiliki kolom 'Week'.")
 
-
     st.sidebar.divider()
     if st.sidebar.button("🔄 Perbarui Data", use_container_width=True):
         st.cache_data.clear()
@@ -101,7 +112,7 @@ if not df.empty:
         filtered_daily_data = stock_data[stock_data['Week'].isin(selected_weeks)]
 
         st.header(f"Analisis Harian untuk {selected_stock}")
-        st.markdown(f"Menampilkan data untuk minggu: **{', '.join(selected_weeks)}**")
+        st.markdown(f"##### Menampilkan data untuk minggu: **{', '.join(selected_weeks)}**")
 
         create_optimal_chart(
             data=filtered_daily_data,
