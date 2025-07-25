@@ -5,8 +5,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # --- Konfigurasi Halaman ---
-st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
-st.title("🚀 Dashboard Analisis Saham Pro")
+st.set_page_config(page_title="Dashboard Code Pro", layout="wide")
+st.title("🚀 Dashboard Analisis Code Pro")
 
 # --- Load Data & Kalkulasi ---
 @st.cache_data(ttl=3600)
@@ -72,7 +72,7 @@ with tab_chart:
     st.sidebar.divider()
     if not df.empty:
         all_stocks = sorted(df['Stock Code'].unique())
-        selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
+        selected_stock = st.sidebar.selectbox("1. Pilih Kode Code", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
         stock_data = df[df["Stock Code"] == selected_stock]
         if not stock_data.empty and 'Week' in stock_data.columns:
             week_mapping = stock_data.groupby('Week')['Last Trading Date'].max().reset_index()
@@ -96,8 +96,8 @@ with tab_chart:
         st.warning("Gagal memuat data.")
 
 with tab_screener:
-    st.header("Screener Saham Berdasarkan Lonjakan Volume & Value")
-    st.markdown("Cari saham yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
+    st.header("Screener Code Berdasarkan Lonjakan Volume & Value")
+    st.markdown("Cari Code yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
     if not df.empty:
         latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
         
@@ -126,7 +126,7 @@ with tab_screener:
             
             result_df.sort_values(by='Vol_Factor', ascending=False, inplace=True)
             
-            st.success(f"Ditemukan **{len(result_df)}** saham yang memenuhi kriteria.")
+            st.success(f"Ditemukan **{len(result_df)}** Code yang memenuhi kriteria.")
             
             # Kolom MA3 tidak relevan lagi untuk ditampilkan, kita hapus
             display_cols = [
@@ -136,7 +136,7 @@ with tab_screener:
             ]
             
             rename_cols = {
-                'Stock Code': 'Saham',
+                'Stock Code': 'Code',
                 'Vol_Factor': 'Vol x MA20',
                 'MA20_vol': 'Rata2 Vol 20D',
                 'Val_Factor': 'Val x MA20',
