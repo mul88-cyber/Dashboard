@@ -12,7 +12,7 @@ st.title("🚀 Dashboard Analisis Saham Pro")
 # --- Load Data & Kalkulasi ---
 @st.cache_data(ttl=3600)
 def load_data():
-    """Memuat, membersihkan, dan menghitung semua indikator yang dibutuhkan."""
+    """Memuat dan membersihkan data dari URL."""
     csv_url = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
     try:
         df = pd.read_csv(csv_url)
@@ -21,7 +21,6 @@ def load_data():
         for col in numeric_cols:
              if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce')
         df.fillna(0, inplace=True)
-        df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
         df.sort_values(by="Last Trading Date", inplace=True)
         return df
     except Exception as e:
@@ -30,35 +29,61 @@ def load_data():
 
 df = load_data()
 
-# --- Fungsi Grafik ---
+# --- Fungsi Grafik Final ---
 def create_aligned_chart(data, x_axis_col, title):
+    """
+    Membuat grafik baru yang valid secara data:
+    - Atas: Grafik Harga
+    - Bawah: Grafik Volume (batang) & Net Foreign Flow (garis)
+    """
     if data.empty: return
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3], specs=[[{"secondary_y": True}], [{}]])
-    def format_volume_text_id(num):
-        if num == 0: return ''
-        if abs(num) >= 1_000_000_000: return f'{num / 1_000_000_000:.1f}M'
-        if abs(num) >= 1_000_000: return f'{num / 1_000_000:.1f}Jt'
-        if abs(num) >= 1_000: return f'{num / 1_000:.1f}Rb'
-        return f'{num:.0f}'
-    text_fb, text_fs, text_local = (data['Foreign Buy'].apply(format_volume_text_id), data['Foreign Sell'].apply(format_volume_text_id), data['Local Volume'].apply(format_volume_text_id))
-    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Buy'], name='Asing Beli', marker_color='#2ca02c', text=text_fb, textposition='inside', textangle=-90, insidetextanchor='middle', textfont=dict(color='white', size=10)), row=1, col=1)
-    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Sell'], name='Asing Jual', marker_color='#d62728', text=text_fs, textposition='inside', textangle=-90, insidetextanchor='middle', textfont=dict(color='white', size=10)), row=1, col=1)
-    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Local Volume'], name='Lokal', marker_color='#1f77b4', text=text_local, textposition='inside', textangle=-90, insidetextanchor='middle', textfont=dict(color='white', size=10)), row=1, col=1)
+
+    # Buat subplot dengan 2 baris, di mana baris bawah punya sumbu Y ganda
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        vertical_spacing=0.03, row_heights=[0.6, 0.4],
+        specs=[[{"secondary_y": False}], [{"secondary_y": True}]]
+    )
+
+    # --- GRAFIK ATAS: HARGA ---
     marker_colors = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
-    fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Close'], name='Harga', customdata=data[['Change %']], hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>', line=dict(color='white', width=2), mode='lines+markers', marker=dict(color=marker_colors, size=6, line=dict(width=1, color='white'))), secondary_y=True, row=1, col=1)
-    fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Frequency'], name='Frekuensi', mode='lines', line=dict(color='#ff7f0e', width=2), fill='tozeroy'), row=2, col=1)
-    max_vol, max_price, min_price = (data['Volume'].max(), data['Close'].max(), data['Close'].min()) if not data.empty else (1, 1, 0)
-    if max_price == min_price: price_range_min, price_range_max = (min_price * 0.95, max_price * 1.05)
-    else:
-        proportion, price_data_range = 0.70, max_price - min_price
-        price_total_range = price_data_range / proportion
-        price_range_max, price_range_min = (max_price + (price_data_range * 0.05), (max_price + (price_data_range * 0.05)) - price_total_range)
-    fig.update_layout(title_text=title, title_font_size=22, template='plotly_dark', barmode='stack', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)))
-    fig.update_xaxes(tickfont_size=12)
-    fig.update_yaxes(title_font_size=16, tickfont_size=12)
-    fig.update_yaxes(title_text="Volume", secondary_y=False, row=1, col=1, range=[0, max_vol * 1.05])
-    fig.update_yaxes(title_text="Harga (Rp)", secondary_y=True, row=1, col=1, showgrid=False, range=[price_range_min, price_range_max])
-    fig.update_yaxes(title_text="Frekuensi", row=2, col=1)
+    fig.add_trace(go.Scatter(
+        x=data[x_axis_col], y=data['Close'], name='Harga',
+        customdata=data[['Change %']],
+        hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>',
+        line=dict(color='white', width=2), mode='lines+markers',
+        marker=dict(color=marker_colors, size=6, line=dict(width=1, color='white'))
+    ), row=1, col=1)
+
+    # --- GRAFIK BAWAH: VOLUME & NET FOREIGN FLOW ---
+    # 1. Batang untuk Total Volume (warna sesuai kenaikan/penurunan harga)
+    fig.add_trace(go.Bar(
+        x=data[x_axis_col], y=data['Volume'], name='Total Volume',
+        marker_color=marker_colors, opacity=0.7
+    ), secondary_y=False, row=2, col=1)
+
+    # 2. Garis untuk Net Foreign Flow
+    fig.add_trace(go.Scatter(
+        x=data[x_axis_col], y=data['Net Foreign Flow'], name='Net Foreign Flow',
+        line=dict(color='#ff7f0e', width=2.5)
+    ), secondary_y=True, row=2, col=1)
+
+    # Tambahkan garis nol horizontal untuk mempermudah analisa Net FF
+    fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="grey", row=2, col=1, secondary_y=True)
+    
+    # --- Penyesuaian Layout ---
+    fig.update_layout(
+        title_text=title, title_font_size=22, template='plotly_dark', height=600,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14))
+    )
+    fig.update_xaxes(showticklabels=False, row=1, col=1) # Sembunyikan label tanggal di grafik atas
+    fig.update_xaxes(title_text="Tanggal", tickfont_size=12, row=2, col=1)
+    
+    # Atur Sumbu Y
+    fig.update_yaxes(title_text="Harga (Rp)", title_font_size=16, tickfont_size=12, row=1, col=1)
+    fig.update_yaxes(title_text="Total Volume", secondary_y=False, row=2, col=1, title_font_size=16, tickfont_size=12)
+    fig.update_yaxes(title_text="Net Foreign Flow", secondary_y=True, row=2, col=1, title_font_size=16, tickfont_size=12, showgrid=False)
+    
     st.plotly_chart(fig, use_container_width=True)
 
 # --- Tampilan Utama dengan Tab ---
@@ -89,9 +114,15 @@ with tab_chart:
     st.sidebar.header("🔍 Filter Analisis Detail")
     st.sidebar.divider()
     if not df.empty:
-        all_stocks = sorted(df['Stock Code'].unique())
+        # Hapus 'Local Volume' karena tidak dipakai di grafik baru
+        if 'Local Volume' in df.columns:
+            df_chart = df.drop(columns=['Local Volume'])
+        else:
+            df_chart = df
+            
+        all_stocks = sorted(df_chart['Stock Code'].unique())
         selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0, key="stock_selector")
-        stock_data = df[df["Stock Code"] == selected_stock].copy()
+        stock_data = df_chart[df_chart["Stock Code"] == selected_stock].copy()
         
         if not stock_data.empty:
             latest_day_data = stock_data.iloc[-1]
@@ -111,44 +142,20 @@ with tab_chart:
             kpi4.metric(label="Sektor", value=latest_day_data.get('Sector', 'N/A'))
             st.divider()
 
-        # --- PERBAIKAN: FILTER BULAN MENJADI MULTI-SELECT ---
         if not stock_data.empty and 'Week' in stock_data.columns:
             stock_data['Month_Year_Display'] = stock_data['Last Trading Date'].dt.strftime('%b-%Y')
             stock_data['Month_Year_Sort'] = stock_data['Last Trading Date'].dt.strftime('%Y-%m')
             month_year_df = stock_data[['Month_Year_Sort', 'Month_Year_Display']].drop_duplicates().sort_values(by='Month_Year_Sort', ascending=False)
             available_months = month_year_df['Month_Year_Display'].tolist()
-            
-            # Ubah selectbox menjadi multiselect
-            selected_months = st.sidebar.multiselect(
-                "2. Pilih Bulan-Tahun (bisa lebih dari satu)", 
-                available_months, 
-                default=available_months[0] if available_months else None
-            )
-            
-            # Dapatkan semua minggu dari bulan-bulan yang dipilih
-            if selected_months:
-                weeks_in_months = sorted(stock_data[stock_data['Month_Year_Display'].isin(selected_months)]['Week'].unique(), reverse=True)
-            else:
-                weeks_in_months = []
-
-            # Bersihkan session state jika pilihan minggu sudah tidak valid
-            if 'selected_weeks' in st.session_state:
-                st.session_state.selected_weeks = [w for w in st.session_state.selected_weeks if w in weeks_in_months]
-
+            selected_months = st.sidebar.multiselect("2. Pilih Bulan-Tahun (bisa lebih dari satu)", available_months, default=available_months[0] if available_months else None)
+            if selected_months: weeks_in_months = sorted(stock_data[stock_data['Month_Year_Display'].isin(selected_months)]['Week'].unique(), reverse=True)
+            else: weeks_in_months = []
+            if 'selected_weeks' in st.session_state: st.session_state.selected_weeks = [w for w in st.session_state.selected_weeks if w in weeks_in_months]
             btn_col1, btn_col2 = st.sidebar.columns(2)
-            if btn_col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True): 
-                st.session_state.selected_weeks = weeks_in_months
-                st.rerun()
-            if btn_col2.button("Hapus Pilihan", key="clear_weeks", use_container_width=True):
-                st.session_state.selected_weeks = []
-                st.rerun()
-            
-            selected_weeks = st.sidebar.multiselect(
-                "3. Pilih Minggu", weeks_in_months, 
-                key='selected_weeks',
-            )
-        else:
-            selected_weeks = []
+            if btn_col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True): st.session_state.selected_weeks = weeks_in_months; st.rerun()
+            if btn_col2.button("Hapus Pilihan", key="clear_weeks", use_container_width=True): st.session_state.selected_weeks = []; st.rerun()
+            selected_weeks = st.sidebar.multiselect("3. Pilih Minggu", weeks_in_months, key='selected_weeks')
+        else: selected_weeks = []
         
         st.sidebar.divider()
         if st.sidebar.button("🔄 Perbarui Data", use_container_width=True): st.cache_data.clear(); st.rerun()
@@ -169,8 +176,7 @@ with tab_screener:
         with filter_col1:
             filter_vol = st.checkbox("Filter Lonjakan Volume", value=True, key="vol_filter")
             filter_val = st.checkbox("Filter Lonjakan Nilai", value=False, key="val_filter")
-        with filter_col2:
-            multiplier = st.number_input("Minimal Kenaikan (x lipat)", min_value=1.0, value=5.0, step=0.5, key="multiplier")
+        with filter_col2: multiplier = st.number_input("Minimal Kenaikan (x lipat)", min_value=1.0, value=5.0, step=0.5, key="multiplier")
         latest_data_screener['Vol_Factor'] = (latest_data_screener['Volume'] / latest_data_screener['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
         latest_data_screener['Val_Factor'] = (latest_data_screener['Value'] / latest_data_screener['MA20_val']).replace([np.inf, -np.inf], 0).fillna(0)
         conditions = []
