@@ -12,23 +12,17 @@ st.title("🚀 Dashboard Analisis Saham Pro")
 # --- Load Data & Kalkulasi ---
 @st.cache_data(ttl=3600)
 def load_data():
-    """Memuat dan membersihkan data dari URL."""
+    """Memuat, membersihkan, dan menghitung semua indikator yang dibutuhkan."""
     csv_url = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
     try:
         df = pd.read_csv(csv_url)
         df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
-        
-        # Kolom numerik diasumsikan sudah lengkap dari CSV
         numeric_cols = ['Volume', 'Value', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency', 'Change', 'Previous', 'Change %', 'MA20_vol', 'MA20_val', 'Net Foreign Flow']
         for col in numeric_cols:
              if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         df.fillna(0, inplace=True)
-        
-        # Menghapus blok 'if' untuk perhitungan sementara
-        # Hanya menghitung 'Local Volume' untuk kebutuhan visualisasi
         df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
-        
         df.sort_values(by="Last Trading Date", inplace=True)
         return df
     except Exception as e:
@@ -98,7 +92,8 @@ with tab_chart:
     if not df.empty:
         all_stocks = sorted(df['Stock Code'].unique())
         selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
-        stock_data = df[df["Stock Code"] == selected_stock]
+        stock_data = df[df["Stock Code"] == selected_stock].copy()
+        
         if not stock_data.empty:
             latest_day_data = stock_data.iloc[-1]
             st.header(f"Analisis Detail: {selected_stock}")
@@ -116,19 +111,42 @@ with tab_chart:
             kpi3.metric(label="Lonjakan Volume (vs MA20)", value=f"{vol_factor:.1f}x")
             kpi4.metric(label="Sektor", value=latest_day_data.get('Sector', 'N/A'))
             st.divider()
+
+        # --- PERBAIKAN: FILTER MINGGU YANG LEBIH BAIK ---
         if not stock_data.empty and 'Week' in stock_data.columns:
-            week_mapping = stock_data.groupby('Week')['Last Trading Date'].max().reset_index()
-            sorted_weeks_df = week_mapping.sort_values(by='Last Trading Date', ascending=False)
-            available_weeks = sorted_weeks_df['Week'].tolist()
-            selected_weeks = st.sidebar.multiselect("2. Pilih Minggu", options=available_weeks, default=available_weeks[:4] if len(available_weeks) > 4 else available_weeks)
-        else: selected_weeks = []
+            stock_data['Year'] = stock_data['Week'].str.split('-').str[0]
+            available_years = sorted(stock_data['Year'].unique(), reverse=True)
+            
+            selected_year = st.sidebar.selectbox("2. Pilih Tahun", available_years)
+            
+            weeks_in_year = sorted(stock_data[stock_data['Year'] == selected_year]['Week'].unique(), reverse=True)
+            
+            # Tombol bantuan
+            col1, col2 = st.sidebar.columns(2)
+            if col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True):
+                st.session_state.selected_weeks = weeks_in_year
+            if col2.button("Hapus Pilihan", key="clear_weeks", use_container_width=True):
+                st.session_state.selected_weeks = []
+
+            # Widget multiselect
+            selected_weeks = st.sidebar.multiselect(
+                "3. Pilih Minggu (atau gunakan tombol di atas)", 
+                weeks_in_year, 
+                key='selected_weeks',
+                default=weeks_in_year[:4] if 'selected_weeks' not in st.session_state else st.session_state.selected_weeks
+            )
+        else:
+            selected_weeks = []
+        
         st.sidebar.divider()
         if st.sidebar.button("🔄 Perbarui Data", use_container_width=True): st.cache_data.clear(); st.rerun()
+        
         if selected_weeks:
             filtered_daily_data = stock_data[stock_data['Week'].isin(selected_weeks)]
-            st.markdown(f"##### Menampilkan data untuk minggu: **{', '.join(selected_weeks)}**")
+            st.markdown(f"##### Menampilkan data untuk minggu: **{', '.join(sorted(selected_weeks))}**")
             create_aligned_chart(data=filtered_daily_data, x_axis_col='Last Trading Date', title="Grafik Detail Harian")
-        else: st.info("Pilih setidaknya satu minggu dari sidebar untuk menampilkan data.")
+        else:
+            st.info("Pilih setidaknya satu minggu dari sidebar untuk menampilkan data.")
     else: st.warning("Gagal memuat data.")
 
 with tab_screener:
