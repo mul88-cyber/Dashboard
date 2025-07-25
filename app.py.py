@@ -65,7 +65,6 @@ def create_aligned_chart(data, x_axis_col, title):
 tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Saham Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"])
 
 with tab_top25:
-    # ... (Tidak ada perubahan di tab ini)
     st.header("Top 25 Saham Paling Potensial Hari Ini")
     st.markdown("Saham-saham ini diurutkan berdasarkan **Sistem Skor Cerdas** yang menggabungkan sinyal akumulasi, lonjakan volume, aliran dana asing, dan momentum harga positif.")
     if not df.empty:
@@ -112,40 +111,42 @@ with tab_chart:
             kpi4.metric(label="Sektor", value=latest_day_data.get('Sector', 'N/A'))
             st.divider()
 
-        # --- PERBAIKAN: Logika Filter Minggu Cerdas ---
+        # --- PERBAIKAN: FILTER BULAN MENJADI MULTI-SELECT ---
         if not stock_data.empty and 'Week' in stock_data.columns:
             stock_data['Month_Year_Display'] = stock_data['Last Trading Date'].dt.strftime('%b-%Y')
             stock_data['Month_Year_Sort'] = stock_data['Last Trading Date'].dt.strftime('%Y-%m')
             month_year_df = stock_data[['Month_Year_Sort', 'Month_Year_Display']].drop_duplicates().sort_values(by='Month_Year_Sort', ascending=False)
             available_months = month_year_df['Month_Year_Display'].tolist()
             
-            # Inisialisasi session state
-            if 'last_selected_month' not in st.session_state:
-                st.session_state.last_selected_month = None
+            # Ubah selectbox menjadi multiselect
+            selected_months = st.sidebar.multiselect(
+                "2. Pilih Bulan-Tahun (bisa lebih dari satu)", 
+                available_months, 
+                default=available_months[0] if available_months else None
+            )
             
-            selected_month = st.sidebar.selectbox("2. Pilih Bulan-Tahun", available_months, key="month_selector")
-            
-            # Logika untuk mereset pilihan minggu jika bulan berubah
-            if st.session_state.last_selected_month != selected_month:
-                st.session_state.selected_weeks = []
-                st.session_state.last_selected_month = selected_month
+            # Dapatkan semua minggu dari bulan-bulan yang dipilih
+            if selected_months:
+                weeks_in_months = sorted(stock_data[stock_data['Month_Year_Display'].isin(selected_months)]['Week'].unique(), reverse=True)
+            else:
+                weeks_in_months = []
 
-            weeks_in_month = sorted(stock_data[stock_data['Month_Year_Display'] == selected_month]['Week'].unique(), reverse=True)
-            
+            # Bersihkan session state jika pilihan minggu sudah tidak valid
+            if 'selected_weeks' in st.session_state:
+                st.session_state.selected_weeks = [w for w in st.session_state.selected_weeks if w in weeks_in_months]
+
             btn_col1, btn_col2 = st.sidebar.columns(2)
-            if btn_col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True):
-                st.session_state.selected_weeks = weeks_in_month
+            if btn_col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True): 
+                st.session_state.selected_weeks = weeks_in_months
                 st.rerun()
             if btn_col2.button("Hapus Pilihan", key="clear_weeks", use_container_width=True):
                 st.session_state.selected_weeks = []
                 st.rerun()
             
             selected_weeks = st.sidebar.multiselect(
-                "3. Pilih Minggu", weeks_in_month, 
-                key='selected_weeks_multiselect', # Ganti key agar tidak konflik
-                default=st.session_state.get('selected_weeks', [])
+                "3. Pilih Minggu", weeks_in_months, 
+                key='selected_weeks',
             )
-            st.session_state.selected_weeks = selected_weeks # Simpan pilihan terbaru
         else:
             selected_weeks = []
         
@@ -156,7 +157,7 @@ with tab_chart:
             filtered_daily_data = stock_data[stock_data['Week'].isin(selected_weeks)]
             st.markdown(f"##### Menampilkan data untuk minggu: **{', '.join(sorted(selected_weeks))}**")
             create_aligned_chart(data=filtered_daily_data, x_axis_col='Last Trading Date', title="Grafik Detail Harian")
-        else: st.info("Pilih setidaknya satu minggu dari sidebar untuk menampilkan data.")
+        else: st.info("Pilih setidaknya satu bulan dan minggu dari sidebar untuk menampilkan data.")
     else: st.warning("Gagal memuat data.")
 
 with tab_screener:
