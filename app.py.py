@@ -32,60 +32,70 @@ df = load_data()
 # --- Fungsi Grafik Final ---
 def create_aligned_chart(data, x_axis_col, title):
     """
-    Membuat grafik 3 tingkat: Harga, Volume, dan Net Foreign Flow.
+    Membuat grafik 2 tingkat:
+    - Atas: Harga (garis) + Total Volume (batang)
+    - Bawah: Net Foreign Flow (batang)
     """
     if data.empty: return
 
     fig = make_subplots(
-        rows=3, cols=1, shared_xaxes=True,
-        vertical_spacing=0.03,
-        row_heights=[0.5, 0.25, 0.25] # Beri porsi lebih untuk harga
+        rows=2, cols=1, shared_xaxes=True,
+        vertical_spacing=0.03, row_heights=[0.7, 0.3],
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
     )
 
-    # --- GRAFIK #1: HARGA ---
+    # --- GRAFIK ATAS: HARGA & VOLUME ---
+    # 1. Garis Harga (Sumbu Y Kiri)
     marker_colors_price = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
     data['text_change'] = data['Change %'].apply(lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%")
     
     fig.add_trace(go.Scatter(
         x=data[x_axis_col], y=data['Close'], name='Harga',
-        text=data['text_change'],
-        textposition="bottom center",
-        textfont=dict(size=10, color='white'),
-        mode='lines+markers+text', # Tampilkan teks persen permanen
+        text=data['text_change'], textposition="bottom center", textfont=dict(size=10, color='white'),
+        mode='lines+markers+text',
         customdata=data[['Change %']],
         hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>',
         line=dict(color='white', width=2),
         marker=dict(color=marker_colors_price, size=6, line=dict(width=1, color='white'))
-    ), row=1, col=1)
+    ), secondary_y=False, row=1, col=1)
 
-    # --- GRAFIK #2: TOTAL VOLUME ---
+    # 2. Batang Volume (Sumbu Y Kanan)
     fig.add_trace(go.Bar(
         x=data[x_axis_col], y=data['Volume'], name='Total Volume',
-        marker_color=marker_colors_price, opacity=0.7
-    ), row=2, col=1)
-    
-    # --- GRAFIK #3: NET FOREIGN FLOW ---
+        marker_color=marker_colors_price, opacity=0.4
+    ), secondary_y=True, row=1, col=1)
+
+    # --- GRAFIK BAWAH: NET FOREIGN FLOW ---
     marker_colors_ff = np.where(data['Net Foreign Flow'] >= 0, '#2ca02c', '#d62728')
     fig.add_trace(go.Bar(
         x=data[x_axis_col], y=data['Net Foreign Flow'], name='Net Foreign Flow',
         marker_color=marker_colors_ff
-    ), row=3, col=1)
+    ), row=2, col=1)
 
-    # --- Penyesuaian Layout ---
+    # --- Penyesuaian Layout & Sumbu Y ---
+    max_price = data['Close'].max() if not data['Close'].empty else 1
+    min_price = data['Close'].min() if not data['Close'].empty else 0
+    max_vol = data['Volume'].max() if not data['Volume'].empty else 1
+    
+    if max_price == min_price:
+        price_range_min, price_range_max = (min_price * 0.95, max_price * 1.05)
+    else:
+        proportion, price_data_range = 0.70, max_price - min_price
+        price_total_range = price_data_range / proportion
+        price_range_max = max_price + (price_data_range * 0.05)
+        price_range_min = price_range_max - price_total_range
+        
     fig.update_layout(
         title_text=title, title_font_size=22, template='plotly_dark', height=700,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)),
-        xaxis_rangeslider_visible=False
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14))
     )
-    # Sembunyikan label X untuk grafik atas & tengah
     fig.update_xaxes(showticklabels=False, row=1, col=1)
-    fig.update_xaxes(showticklabels=False, row=2, col=1)
-    fig.update_xaxes(title_text="Tanggal", tickfont_size=12, row=3, col=1)
+    fig.update_xaxes(title_text="Tanggal", tickfont_size=12, row=2, col=1)
     
     # Atur Sumbu Y
-    fig.update_yaxes(title_text="Harga (Rp)", title_font_size=14, tickfont_size=12, row=1, col=1)
-    fig.update_yaxes(title_text="Volume", title_font_size=14, tickfont_size=12, row=2, col=1)
-    fig.update_yaxes(title_text="Net FF", title_font_size=14, tickfont_size=12, row=3, col=1)
+    fig.update_yaxes(title_text="Harga (Rp)", secondary_y=False, row=1, col=1, title_font_size=14, tickfont_size=12, range=[price_range_min, price_range_max])
+    fig.update_yaxes(title_text="Volume", secondary_y=True, row=1, col=1, title_font_size=14, tickfont_size=12, showgrid=False, range=[0, max_vol * 3])
+    fig.update_yaxes(title_text="Net FF", row=2, col=1, title_font_size=14, tickfont_size=12)
     
     st.plotly_chart(fig, use_container_width=True)
 
