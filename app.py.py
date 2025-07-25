@@ -17,13 +17,18 @@ def load_data():
     try:
         df = pd.read_csv(csv_url)
         df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
-        # Pastikan semua kolom numerik yang relevan dibaca dengan benar
+        
+        # Kolom numerik diasumsikan sudah lengkap dari CSV
         numeric_cols = ['Volume', 'Value', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency', 'Change', 'Previous', 'Change %', 'MA20_vol', 'MA20_val', 'Net Foreign Flow']
         for col in numeric_cols:
              if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         df.fillna(0, inplace=True)
+        
+        # Menghapus blok 'if' untuk perhitungan sementara
+        # Hanya menghitung 'Local Volume' untuk kebutuhan visualisasi
         df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
+        
         df.sort_values(by="Last Trading Date", inplace=True)
         return df
     except Exception as e:
@@ -69,14 +74,9 @@ tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Saham Potensial", "�
 with tab_top25:
     st.header("Top 25 Saham Paling Potensial Hari Ini")
     st.markdown("Saham-saham ini diurutkan berdasarkan **Sistem Skor Cerdas** yang menggabungkan sinyal akumulasi, lonjakan volume, aliran dana asing, dan momentum harga positif.")
-    
     if not df.empty:
         latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
-
-        # Hitung Vol_Factor untuk skor
         latest_data['Vol_Factor'] = (latest_data['Volume'] / latest_data['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
-        
-        # --- Logika Scoring ---
         latest_data['Score'] = 0
         latest_data.loc[latest_data['Final Signal'] == 'Strong Akumulasi', 'Score'] += 4
         latest_data.loc[latest_data['Final Signal'] == 'Akumulasi', 'Score'] += 2
@@ -84,33 +84,13 @@ with tab_top25:
         latest_data.loc[(latest_data['Vol_Factor'] >= 5) & (latest_data['Vol_Factor'] < 10), 'Score'] += 2
         latest_data.loc[latest_data['Foreign Flow Signal'] == 'Inflow', 'Score'] += 2
         latest_data.loc[latest_data['Change %'] > 0, 'Score'] += 1
-
-        # Ambil Top 25
         top_25_df = latest_data.sort_values(by='Score', ascending=False).head(25)
-
-        # Tampilkan
         st.success(f"Menampilkan **{len(top_25_df)}** saham teratas berdasarkan data tanggal **{latest_data['Last Trading Date'].max().strftime('%d %b %Y')}**")
-
         display_cols = ['Stock Code', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal']
-        rename_cols = {
-            'Stock Code': 'Saham',
-            'Final Signal': 'Sinyal Utama',
-            'Vol_Factor': 'Vol x MA20',
-            'Foreign Flow Signal': 'Foreign Flow'
-        }
-        format_dict = {
-            'Close': "{:,.0f}",
-            'Change %': "{:,.2f}%",
-            'Score': "{:,.0f} Poin",
-            'Vol x MA20': "{:,.1f}x"
-        }
-        
-        st.dataframe(
-            top_25_df[display_cols].rename(columns=rename_cols).style.format(format_dict).background_gradient(cmap='Greens', subset=['Score']),
-            use_container_width=True
-        )
-    else:
-        st.warning("Data tidak tersedia untuk menampilkan Top 25.")
+        rename_cols = {'Stock Code': 'Saham', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow'}
+        format_dict = {'Close': "{:,.0f}", 'Change %': "{:,.2f}%", 'Score': "{:,.0f} Poin", 'Vol x MA20': "{:,.1f}x"}
+        st.dataframe(top_25_df[display_cols].rename(columns=rename_cols).style.format(format_dict).background_gradient(cmap='Greens', subset=['Score']), use_container_width=True)
+    else: st.warning("Data tidak tersedia untuk menampilkan Top 25.")
 
 with tab_chart:
     st.sidebar.header("🔍 Filter Analisis Detail")
