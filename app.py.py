@@ -38,7 +38,7 @@ df = load_data()
 # --- Fungsi Grafik Final ---
 def create_aligned_chart(data, x_axis_col, title):
     """
-    Membuat grafik combo dengan info Change % pada hover dan warna marker.
+    Membuat grafik combo dengan teks Change % yang tampil permanen di atas/bawah marker.
     """
     if data.empty:
         st.warning("Tidak ada data untuk rentang minggu yang dipilih.")
@@ -49,39 +49,37 @@ def create_aligned_chart(data, x_axis_col, title):
         vertical_spacing=0.05, row_heights=[0.7, 0.3],
         specs=[[{"secondary_y": True}], [{}]])
 
-    # --- PERBAIKAN: Menambahkan info Change % ke Garis Harga ---
-    # Tentukan warna marker berdasarkan nilai Change %
-    marker_colors = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728') # Hijau jika naik/stagnan, Merah jika turun
+    # --- PERBAIKAN: Menyiapkan dan menampilkan teks Change % ---
+    marker_colors = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
+    # Buat teks untuk ditampilkan di grafik, tambahkan '+' untuk angka positif
+    data['text_change'] = data['Change %'].apply(lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%")
 
-    # Tambahkan bar volume (tidak ada perubahan)
+    # Bar volume
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Buy'], name='Asing Beli', marker_color='#2ca02c'), row=1, col=1)
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Sell'], name='Asing Jual', marker_color='#d62728'), row=1, col=1)
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Local Volume'], name='Lokal', marker_color='#1f77b4'), row=1, col=1)
     
-    # Tambahkan garis harga dengan marker berwarna dan hover info baru
+    # Garis harga dengan teks permanen
     fig.add_trace(go.Scatter(
         x=data[x_axis_col],
         y=data['Close'],
         name='Harga',
-        customdata=data[['Change %']], # Kirim data 'Change %' untuk digunakan di hover
-        hovertemplate=(
-            '<b>%{x|%d %b %Y}</b><br>'
-            'Harga: %{y:,.0f}<br>'
-            'Change: %{customdata[0]:.2f}%<extra></extra>' # Tampilkan harga dan change %
+        # Tampilkan teks dari kolom 'text_change'
+        text=data['text_change'],
+        textposition="bottom center", # Posisi teks: bawah tengah dari marker
+        textfont=dict(
+            size=10,
+            color='white'
         ),
+        mode='lines+markers+text', # Tambahkan 'text' ke mode
         line=dict(color='white', width=2),
-        mode='lines+markers', # Tampilkan garis dan titik
-        marker=dict(
-            color=marker_colors, # Terapkan warna dinamis
-            size=6,
-            line=dict(width=1, color='white') # Garis tepi marker
-        )
+        marker=dict(color=marker_colors, size=6, line=dict(width=1, color='white'))
     ), secondary_y=True, row=1, col=1)
 
-    # Grafik Bawah: Frekuensi (tidak ada perubahan)
+    # Grafik Bawah: Frekuensi
     fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Frequency'], name='Frekuensi', mode='lines', line=dict(color='#ff7f0e', width=2), fill='tozeroy'), row=2, col=1)
 
-    # Logika rentang sumbu Y (tidak ada perubahan)
+    # Logika rentang sumbu Y
     max_vol = data['Volume'].max() if not data['Volume'].empty else 1
     max_price = data['Close'].max() if not data['Close'].empty else 1
     min_price = data['Close'].min() if not data['Close'].empty else 0
