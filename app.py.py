@@ -91,7 +91,7 @@ with tab_chart:
     st.sidebar.divider()
     if not df.empty:
         all_stocks = sorted(df['Stock Code'].unique())
-        selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
+        selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0, key="stock_selector")
         stock_data = df[df["Stock Code"] == selected_stock].copy()
         
         if not stock_data.empty:
@@ -112,30 +112,40 @@ with tab_chart:
             kpi4.metric(label="Sektor", value=latest_day_data.get('Sector', 'N/A'))
             st.divider()
 
-        # --- PERBAIKAN: FILTER TAHUN MENJADI BULAN-TAHUN ---
+        # --- PERBAIKAN: Logika Filter Minggu Cerdas ---
         if not stock_data.empty and 'Week' in stock_data.columns:
-            # Buat kolom Bulan-Tahun untuk display dan sorting
             stock_data['Month_Year_Display'] = stock_data['Last Trading Date'].dt.strftime('%b-%Y')
             stock_data['Month_Year_Sort'] = stock_data['Last Trading Date'].dt.strftime('%Y-%m')
-            
-            # Dapatkan daftar bulan-tahun yang unik dan urutkan
             month_year_df = stock_data[['Month_Year_Sort', 'Month_Year_Display']].drop_duplicates().sort_values(by='Month_Year_Sort', ascending=False)
             available_months = month_year_df['Month_Year_Display'].tolist()
             
-            selected_month = st.sidebar.selectbox("2. Pilih Bulan-Tahun", available_months)
+            # Inisialisasi session state
+            if 'last_selected_month' not in st.session_state:
+                st.session_state.last_selected_month = None
             
-            # Filter minggu berdasarkan bulan-tahun yang dipilih
+            selected_month = st.sidebar.selectbox("2. Pilih Bulan-Tahun", available_months, key="month_selector")
+            
+            # Logika untuk mereset pilihan minggu jika bulan berubah
+            if st.session_state.last_selected_month != selected_month:
+                st.session_state.selected_weeks = []
+                st.session_state.last_selected_month = selected_month
+
             weeks_in_month = sorted(stock_data[stock_data['Month_Year_Display'] == selected_month]['Week'].unique(), reverse=True)
             
             btn_col1, btn_col2 = st.sidebar.columns(2)
-            if btn_col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True): st.session_state.selected_weeks = weeks_in_month
-            if btn_col2.button("Hapus Pilihan", key="clear_weeks", use_container_width=True): st.session_state.selected_weeks = []
+            if btn_col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True):
+                st.session_state.selected_weeks = weeks_in_month
+                st.rerun()
+            if btn_col2.button("Hapus Pilihan", key="clear_weeks", use_container_width=True):
+                st.session_state.selected_weeks = []
+                st.rerun()
             
             selected_weeks = st.sidebar.multiselect(
                 "3. Pilih Minggu", weeks_in_month, 
-                key='selected_weeks',
-                default=weeks_in_month if 'selected_weeks' not in st.session_state else st.session_state.selected_weeks
+                key='selected_weeks_multiselect', # Ganti key agar tidak konflik
+                default=st.session_state.get('selected_weeks', [])
             )
+            st.session_state.selected_weeks = selected_weeks # Simpan pilihan terbaru
         else:
             selected_weeks = []
         
@@ -154,15 +164,12 @@ with tab_screener:
     st.markdown("Cari saham yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
     if not df.empty:
         latest_data_screener = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
-        
-        # --- PERBAIKAN: Layout filter diubah menjadi 2 kolom ---
         filter_col1, filter_col2 = st.columns([2,1])
         with filter_col1:
             filter_vol = st.checkbox("Filter Lonjakan Volume", value=True, key="vol_filter")
             filter_val = st.checkbox("Filter Lonjakan Nilai", value=False, key="val_filter")
         with filter_col2:
             multiplier = st.number_input("Minimal Kenaikan (x lipat)", min_value=1.0, value=5.0, step=0.5, key="multiplier")
-            
         latest_data_screener['Vol_Factor'] = (latest_data_screener['Volume'] / latest_data_screener['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
         latest_data_screener['Val_Factor'] = (latest_data_screener['Value'] / latest_data_screener['MA20_val']).replace([np.inf, -np.inf], 0).fillna(0)
         conditions = []
