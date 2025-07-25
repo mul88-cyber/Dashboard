@@ -33,8 +33,8 @@ df = load_data()
 def create_aligned_chart(data, x_axis_col, title):
     """
     Membuat grafik 2 tingkat:
-    - Atas: Harga (garis) + Total Volume (batang)
-    - Bawah: Net Foreign Flow (batang)
+    - Atas: Harga (garis) + Total Volume (batang solid)
+    - Bawah: Net Foreign Flow (batang transparan)
     """
     if data.empty: return
 
@@ -45,10 +45,10 @@ def create_aligned_chart(data, x_axis_col, title):
     )
 
     # --- GRAFIK ATAS: HARGA & VOLUME ---
-    # 1. Garis Harga (Sumbu Y Kiri)
     marker_colors_price = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
     data['text_change'] = data['Change %'].apply(lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%")
     
+    # 1. Garis Harga (Sumbu Y Kiri)
     fig.add_trace(go.Scatter(
         x=data[x_axis_col], y=data['Close'], name='Harga',
         text=data['text_change'], textposition="bottom center", textfont=dict(size=10, color='white'),
@@ -59,17 +59,18 @@ def create_aligned_chart(data, x_axis_col, title):
         marker=dict(color=marker_colors_price, size=6, line=dict(width=1, color='white'))
     ), secondary_y=False, row=1, col=1)
 
-    # 2. Batang Volume (Sumbu Y Kanan)
+    # 2. Batang Volume (Sumbu Y Kanan) - DIBUAT SOLID
     fig.add_trace(go.Bar(
         x=data[x_axis_col], y=data['Volume'], name='Total Volume',
-        marker_color=marker_colors_price, opacity=0.4
+        marker_color=marker_colors_price, opacity=0.9 # Dibuat lebih solid
     ), secondary_y=True, row=1, col=1)
 
     # --- GRAFIK BAWAH: NET FOREIGN FLOW ---
     marker_colors_ff = np.where(data['Net Foreign Flow'] >= 0, '#2ca02c', '#d62728')
     fig.add_trace(go.Bar(
         x=data[x_axis_col], y=data['Net Foreign Flow'], name='Net Foreign Flow',
-        marker_color=marker_colors_ff
+        marker_color=marker_colors_ff,
+        opacity=0.7 # Dibuat sedikit transparan
     ), row=2, col=1)
 
     # --- Penyesuaian Layout & Sumbu Y ---
