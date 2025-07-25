@@ -19,8 +19,7 @@ def load_data():
         df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
         numeric_cols = ['Volume', 'Value', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency', 'Change', 'Previous', 'Change %', 'MA20_vol', 'MA20_val', 'Net Foreign Flow']
         for col in numeric_cols:
-             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+             if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce')
         df.fillna(0, inplace=True)
         df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
         df.sort_values(by="Last Trading Date", inplace=True)
@@ -54,7 +53,9 @@ def create_aligned_chart(data, x_axis_col, title):
         proportion, price_data_range = 0.70, max_price - min_price
         price_total_range = price_data_range / proportion
         price_range_max, price_range_min = (max_price + (price_data_range * 0.05), (max_price + (price_data_range * 0.05)) - price_total_range)
-    fig.update_layout(title_text=title, title_font_size=22, template='plotly_dark', height=500, barmode='stack', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)))
+    
+    # PERBAIKAN: Hapus tinggi statis, biarkan autosize
+    fig.update_layout(title_text=title, title_font_size=22, template='plotly_dark', barmode='stack', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)))
     fig.update_xaxes(tickfont_size=12)
     fig.update_yaxes(title_font_size=16, tickfont_size=12)
     fig.update_yaxes(title_text="Volume", secondary_y=False, row=1, col=1, range=[0, max_vol * 1.05])
@@ -66,6 +67,7 @@ def create_aligned_chart(data, x_axis_col, title):
 tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Saham Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"])
 
 with tab_top25:
+    # ... (Tidak ada perubahan di tab ini)
     st.header("Top 25 Saham Paling Potensial Hari Ini")
     st.markdown("Saham-saham ini diurutkan berdasarkan **Sistem Skor Cerdas** yang menggabungkan sinyal akumulasi, lonjakan volume, aliran dana asing, dan momentum harga positif.")
     if not df.empty:
@@ -94,49 +96,41 @@ with tab_chart:
         selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
         stock_data = df[df["Stock Code"] == selected_stock].copy()
         
+        # --- PERBAIKAN: Layout Ringkasan Dibuat Lebih Ramping ---
         if not stock_data.empty:
             latest_day_data = stock_data.iloc[-1]
-            st.header(f"Analisis Detail: {selected_stock}")
-            st.subheader(f"Ringkasan Hari Terakhir ({latest_day_data['Last Trading Date'].strftime('%d %b %Y')})")
+            
+            # Definisikan status dan emoji
             def get_status_display(signal):
                 if signal == "Strong Akumulasi": return "🚀 Strong Akumulasi"
                 if signal == "Akumulasi": return "🟢 Akumulasi"
                 if signal == "Strong Distribusi": return "📉 Strong Distribusi"
                 if signal == "Distribusi": return "🔴 Distribusi"
                 return "⚪️ Netral"
+
+            status_text = get_status_display(latest_day_data.get('Final Signal', 'N/A'))
             vol_factor = latest_day_data['Volume'] / latest_day_data['MA20_vol'] if latest_day_data['MA20_vol'] > 0 else 0
-            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-            kpi1.metric(label="Status Terkini", value=get_status_display(latest_day_data.get('Final Signal', 'N/A')))
-            kpi2.metric(label="Net Foreign Flow", value=f"{latest_day_data.get('Net Foreign Flow', 0):,.0f}")
-            kpi3.metric(label="Lonjakan Volume (vs MA20)", value=f"{vol_factor:.1f}x")
-            kpi4.metric(label="Sektor", value=latest_day_data.get('Sector', 'N/A'))
+            net_ff_formatted = f"{latest_day_data.get('Net Foreign Flow', 0):,.0f}"
+
+            # Tampilkan dalam satu baris menggunakan kolom
+            col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
+            col1.metric("Status Terkini", status_text)
+            col2.metric("Net Foreign Flow", net_ff_formatted)
+            col3.metric("Lonjakan Volume", f"{vol_factor:.1f}x")
+            col4.metric("Sektor", latest_day_data.get('Sector', 'N/A'))
             st.divider()
 
-        # --- PERBAIKAN: FILTER MINGGU YANG LEBIH BAIK ---
+        # Filter Minggu
         if not stock_data.empty and 'Week' in stock_data.columns:
             stock_data['Year'] = stock_data['Week'].str.split('-').str[0]
             available_years = sorted(stock_data['Year'].unique(), reverse=True)
-            
             selected_year = st.sidebar.selectbox("2. Pilih Tahun", available_years)
-            
             weeks_in_year = sorted(stock_data[stock_data['Year'] == selected_year]['Week'].unique(), reverse=True)
-            
-            # Tombol bantuan
-            col1, col2 = st.sidebar.columns(2)
-            if col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True):
-                st.session_state.selected_weeks = weeks_in_year
-            if col2.button("Hapus Pilihan", key="clear_weeks", use_container_width=True):
-                st.session_state.selected_weeks = []
-
-            # Widget multiselect
-            selected_weeks = st.sidebar.multiselect(
-                "3. Pilih Minggu (atau gunakan tombol di atas)", 
-                weeks_in_year, 
-                key='selected_weeks',
-                default=weeks_in_year[:4] if 'selected_weeks' not in st.session_state else st.session_state.selected_weeks
-            )
-        else:
-            selected_weeks = []
+            btn_col1, btn_col2 = st.sidebar.columns(2)
+            if btn_col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True): st.session_state.selected_weeks = weeks_in_year
+            if btn_col2.button("Hapus Pilihan", key="clear_weeks", use_container_width=True): st.session_state.selected_weeks = []
+            selected_weeks = st.sidebar.multiselect("3. Pilih Minggu", weeks_in_year, key='selected_weeks', default=weeks_in_year[:4] if 'selected_weeks' not in st.session_state else st.session_state.selected_weeks)
+        else: selected_weeks = []
         
         st.sidebar.divider()
         if st.sidebar.button("🔄 Perbarui Data", use_container_width=True): st.cache_data.clear(); st.rerun()
@@ -144,12 +138,12 @@ with tab_chart:
         if selected_weeks:
             filtered_daily_data = stock_data[stock_data['Week'].isin(selected_weeks)]
             st.markdown(f"##### Menampilkan data untuk minggu: **{', '.join(sorted(selected_weeks))}**")
-            create_aligned_chart(data=filtered_daily_data, x_axis_col='Last Trading Date', title="Grafik Detail Harian")
-        else:
-            st.info("Pilih setidaknya satu minggu dari sidebar untuk menampilkan data.")
+            create_aligned_chart(data=filtered_daily_data, x_axis_col='Last Trading Date', title=f"Grafik Detail Harian: {selected_stock}")
+        else: st.info("Pilih setidaknya satu minggu dari sidebar untuk menampilkan data.")
     else: st.warning("Gagal memuat data.")
 
 with tab_screener:
+    # ... (Tidak ada perubahan di tab ini)
     st.header("Screener Saham Berdasarkan Lonjakan Volume & Value")
     st.markdown("Cari saham yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
     if not df.empty:
