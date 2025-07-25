@@ -16,25 +16,17 @@ def load_data():
     try:
         df = pd.read_csv(csv_url)
         df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
-        
-        # PERBAIKAN: Tambahkan 'Value' ke kolom numerik dan hapus perhitungan manual
         numeric_cols = ['Volume', 'Value', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency', 'Change', 'Previous']
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         df.fillna(0, inplace=True)
         
         # --- KALKULASI INDIKATOR ---
-        # 1. Hitung Change %
         df['Change %'] = np.where(df['Previous'] != 0, (df['Change'] / df['Previous']) * 100, 0)
-        
-        # 2. Hitung Moving Average menggunakan 'Value' asli
         df = df.sort_values(by=['Stock Code', 'Last Trading Date'])
-        df['MA3_vol'] = df.groupby('Stock Code')['Volume'].transform(lambda x: x.rolling(window=3, min_periods=1).mean())
+        # MA20 adalah dasar perbandingan kita, jadi hanya ini yang perlu dihitung di awal
         df['MA20_vol'] = df.groupby('Stock Code')['Volume'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
-        df['MA3_val'] = df.groupby('Stock Code')['Value'].transform(lambda x: x.rolling(window=3, min_periods=1).mean())
         df['MA20_val'] = df.groupby('Stock Code')['Value'].transform(lambda x: x.rolling(window=20, min_periods=1).mean())
-
-        # 3. Hitung Volume Lokal
         df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
         
         df.sort_values(by="Last Trading Date", inplace=True)
@@ -47,9 +39,7 @@ df = load_data()
 
 # --- Fungsi Grafik (Tidak ada perubahan) ---
 def create_aligned_chart(data, x_axis_col, title):
-    if data.empty:
-        st.warning("Tidak ada data untuk rentang minggu yang dipilih.")
-        return
+    if data.empty: return
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3], specs=[[{"secondary_y": True}], [{}]])
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Buy'], name='Asing Beli', marker_color='#2ca02c'), row=1, col=1)
     fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Sell'], name='Asing Jual', marker_color='#d62728'), row=1, col=1)
@@ -107,22 +97,21 @@ with tab_chart:
 
 with tab_screener:
     st.header("Screener Saham Berdasarkan Lonjakan Volume & Value")
-    st.markdown("Cari saham yang menunjukkan aktivitas perdagangan signifikan berdasarkan perbandingan Moving Average (MA).")
+    st.markdown("Cari saham yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
     if not df.empty:
         latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
         
-        # --- Opsi Filter ---
         col1, col2, col3 = st.columns(3)
         with col1:
-            filter_vol = st.checkbox("Filter Lonjakan Volume", value=True)
+            filter_vol = st.checkbox("Filter Lonjakan Volume", value=True, key="vol_filter")
         with col2:
-            filter_val = st.checkbox("Filter Lonjakan Nilai", value=False)
+            filter_val = st.checkbox("Filter Lonjakan Nilai", value=False, key="val_filter")
         with col3:
-            multiplier = st.number_input("Minimal Kenaikan (x kali lipat)", min_value=1.0, value=5.0, step=0.5)
+            multiplier = st.number_input("Minimal Kenaikan (x kali lipat)", min_value=1.0, value=5.0, step=0.5, key="multiplier")
 
-        # Hitung faktor pengali
-        latest_data['Vol_Factor'] = (latest_data['MA3_vol'] / latest_data['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
-        latest_data['Val_Factor'] = (latest_data['MA3_val'] / latest_data['MA20_val']).replace([np.inf, -np.inf], 0).fillna(0)
+        # --- PERBAIKAN: Hitung faktor pengali dari Volume/Value HARI INI vs MA20 ---
+        latest_data['Vol_Factor'] = (latest_data['Volume'] / latest_data['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
+        latest_data['Val_Factor'] = (latest_data['Value'] / latest_data['MA20_val']).replace([np.inf, -np.inf], 0).fillna(0)
         
         conditions = []
         if filter_vol:
@@ -135,22 +124,23 @@ with tab_screener:
             final_condition = pd.concat(conditions, axis=1).any(axis=1)
             result_df = latest_data[final_condition].copy()
             
-            # --- SORTING & PENATAAN KOLOM ---
             result_df.sort_values(by='Vol_Factor', ascending=False, inplace=True)
             
             st.success(f"Ditemukan **{len(result_df)}** saham yang memenuhi kriteria.")
             
+            # Kolom MA3 tidak relevan lagi untuk ditampilkan, kita hapus
             display_cols = [
                 'Stock Code', 'Close', 'Change %', 
-                'Volume', 'Vol_Factor', 'MA3_vol', 'MA20_vol', 
-                'Value', 'Val_Factor', 'MA3_val', 'MA20_val' # Menggunakan kolom 'Value' asli
+                'Volume', 'Vol_Factor', 'MA20_vol', 
+                'Value', 'Val_Factor', 'MA20_val'
             ]
             
             rename_cols = {
                 'Stock Code': 'Saham',
-                'Value': 'Value', # Tidak perlu rename, tapi pastikan ada
                 'Vol_Factor': 'Vol x MA20',
-                'Val_Factor': 'Val x MA20'
+                'MA20_vol': 'Rata2 Vol 20D',
+                'Val_Factor': 'Val x MA20',
+                'MA20_val': 'Rata2 Val 20D'
             }
             
             styled_df = result_df[display_cols].rename(columns=rename_cols).style.format({
@@ -158,12 +148,10 @@ with tab_screener:
                 'Change %': "{:,.2f}%",
                 'Volume': "{:,.0f}",
                 'Vol x MA20': "{:,.1f}x",
-                'MA3_vol': "{:,.0f}",
-                'MA20_vol': "{:,.0f}",
+                'Rata2 Vol 20D': "{:,.0f}",
                 'Value': "{:,.0f}",
                 'Val x MA20': "{:,.1f}x",
-                'MA3_val': "{:,.0f}",
-                'MA20_val': "{:,.0f}"
+                'Rata2 Val 20D': "{:,.0f}"
             }).background_gradient(cmap='Greens', subset=['Vol x MA20', 'Val x MA20'])
             
             st.dataframe(styled_df, use_container_width=True)
