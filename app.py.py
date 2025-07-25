@@ -32,55 +32,37 @@ df = load_data()
 # --- Fungsi Grafik Final ---
 def create_aligned_chart(data, x_axis_col, title):
     """
-    Membuat grafik baru yang valid dengan titik nol sejajar dan teks Change %.
+    Membuat grafik baru yang lebih simpel dan valid:
+    - Atas: Grafik Harga
+    - Bawah: Bar Chart untuk Net Foreign Flow
     """
     if data.empty: return
 
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True,
-        vertical_spacing=0.03, row_heights=[0.6, 0.4],
-        specs=[[{"secondary_y": False}], [{"secondary_y": True}]]
+        vertical_spacing=0.03, row_heights=[0.6, 0.4]
     )
 
     # --- GRAFIK ATAS: HARGA ---
-    marker_colors = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
-    # Siapkan teks Change % untuk ditampilkan permanen
-    data['text_change'] = data['Change %'].apply(lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%")
-    
+    marker_colors_price = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
     fig.add_trace(go.Scatter(
         x=data[x_axis_col], y=data['Close'], name='Harga',
-        text=data['text_change'], # Tampilkan teks ini
-        textposition="bottom center",
-        textfont=dict(size=10, color='white'),
-        mode='lines+markers+text', # Tambahkan 'text' ke mode
         customdata=data[['Change %']],
         hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>',
-        line=dict(color='white', width=2),
-        marker=dict(color=marker_colors, size=6, line=dict(width=1, color='white'))
+        line=dict(color='white', width=2), mode='lines+markers',
+        marker=dict(color=marker_colors_price, size=6, line=dict(width=1, color='white'))
     ), row=1, col=1)
 
-    # --- GRAFIK BAWAH: VOLUME & NET FOREIGN FLOW ---
+    # --- GRAFIK BAWAH: NET FOREIGN FLOW (BAR CHART) ---
+    marker_colors_ff = np.where(data['Net Foreign Flow'] >= 0, '#2ca02c', '#d62728') # Hijau untuk Net Buy, Merah untuk Net Sell
     fig.add_trace(go.Bar(
-        x=data[x_axis_col], y=data['Volume'], name='Total Volume',
-        marker_color=marker_colors, opacity=0.7
-    ), secondary_y=False, row=2, col=1)
-    fig.add_trace(go.Scatter(
         x=data[x_axis_col], y=data['Net Foreign Flow'], name='Net Foreign Flow',
-        line=dict(color='#ff7f0e', width=2.5)
-    ), secondary_y=True, row=2, col=1)
-    fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="grey", row=2, col=1, secondary_y=True)
-    
-    # --- Penyesuaian Layout & Sumbu Y ---
-    max_price = data['Close'].max() if not data['Close'].empty else 1
-    min_price = data['Close'].min() if not data['Close'].empty else 0
-    if max_price == min_price:
-        price_range_min, price_range_max = (min_price * 0.95, max_price * 1.05)
-    else:
-        proportion, price_data_range = 0.70, max_price - min_price
-        price_total_range = price_data_range / proportion
-        price_range_max = max_price + (price_data_range * 0.05)
-        price_range_min = price_range_max - price_total_range
-        
+        marker_color=marker_colors_ff,
+        customdata=data[['Volume']],
+        hovertemplate='<b>%{x|%d %b %Y}</b><br>Net Foreign Flow: %{y:,.0f}<br>Total Volume: %{customdata[0]:,.0f}<extra></extra>'
+    ), row=2, col=1)
+
+    # --- Penyesuaian Layout ---
     fig.update_layout(
         title_text=title, title_font_size=22, template='plotly_dark', height=600,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14))
@@ -88,10 +70,9 @@ def create_aligned_chart(data, x_axis_col, title):
     fig.update_xaxes(showticklabels=False, row=1, col=1)
     fig.update_xaxes(title_text="Tanggal", tickfont_size=12, row=2, col=1)
     
-    # Terapkan rentang proporsional ke sumbu Y Harga
-    fig.update_yaxes(title_text="Harga (Rp)", title_font_size=16, tickfont_size=12, row=1, col=1, range=[price_range_min, price_range_max])
-    fig.update_yaxes(title_text="Total Volume", secondary_y=False, row=2, col=1, title_font_size=16, tickfont_size=12)
-    fig.update_yaxes(title_text="Net Foreign Flow", secondary_y=True, row=2, col=1, title_font_size=16, tickfont_size=12, showgrid=False)
+    # Atur Sumbu Y
+    fig.update_yaxes(title_text="Harga (Rp)", title_font_size=16, tickfont_size=12, row=1, col=1)
+    fig.update_yaxes(title_text="Net Foreign Flow", title_font_size=16, tickfont_size=12, row=2, col=1)
     
     st.plotly_chart(fig, use_container_width=True)
 
@@ -99,7 +80,6 @@ def create_aligned_chart(data, x_axis_col, title):
 tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Saham Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"])
 
 with tab_top25:
-    # ... (Tidak ada perubahan di tab ini, kode disembunyikan agar ringkas)
     st.header("Top 25 Saham Paling Potensial Hari Ini")
     st.markdown("Saham-saham ini diurutkan berdasarkan **Sistem Skor Cerdas** yang menggabungkan sinyal akumulasi, lonjakan volume, aliran dana asing, dan momentum harga positif.")
     if not df.empty:
@@ -124,8 +104,12 @@ with tab_chart:
     st.sidebar.header("🔍 Filter Analisis Detail")
     st.sidebar.divider()
     if not df.empty:
-        df_chart = df.copy() # Gunakan copy untuk menghindari modifikasi data asli
-        
+        # Hapus 'Local Volume' karena tidak dipakai di grafik baru
+        if 'Local Volume' in df.columns:
+            df_chart = df.drop(columns=['Local Volume'])
+        else:
+            df_chart = df
+            
         all_stocks = sorted(df_chart['Stock Code'].unique())
         selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0, key="stock_selector")
         stock_data = df_chart[df_chart["Stock Code"] == selected_stock].copy()
@@ -174,7 +158,6 @@ with tab_chart:
     else: st.warning("Gagal memuat data.")
 
 with tab_screener:
-    # ... (Tidak ada perubahan di tab ini, kode disembunyikan agar ringkas)
     st.header("Screener Saham Berdasarkan Lonjakan Volume & Value")
     st.markdown("Cari saham yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
     if not df.empty:
