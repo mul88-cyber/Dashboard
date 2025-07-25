@@ -12,7 +12,7 @@ st.title("🚀 Dashboard Analisis Saham Pro")
 # --- Load Data & Kalkulasi ---
 @st.cache_data(ttl=3600)
 def load_data():
-    """Memuat, membersihkan, dan menghitung semua indikator yang dibutuhkan."""
+    """Memuat dan membersihkan data dari URL."""
     csv_url = "https://storage.googleapis.com/stock-csvku/hasil_gabungan.csv"
     try:
         df = pd.read_csv(csv_url)
@@ -29,36 +29,74 @@ def load_data():
 
 df = load_data()
 
-# --- Fungsi Grafik ---
+# --- Fungsi Grafik Final ---
 def create_aligned_chart(data, x_axis_col, title):
+    """
+    Membuat grafik 2 tingkat:
+    - Atas: Harga (garis) + Total Volume (batang)
+    - Bawah: Net Foreign Flow (batang)
+    """
     if data.empty: return
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3], specs=[[{"secondary_y": True}], [{"secondary_y": False}]])
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        vertical_spacing=0.03, row_heights=[0.7, 0.3],
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
+    )
+
+    # --- GRAFIK ATAS: HARGA & VOLUME ---
     marker_colors_price = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
     data['text_change'] = data['Change %'].apply(lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%")
+    
     fig.add_trace(go.Scatter(
-        x=data[x_axis_col], y=data['Close'], name='Harga', text=data['text_change'], textposition="bottom center", textfont=dict(size=10, color='white'),
-        mode='lines+markers+text', customdata=data[['Change %']], hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>',
-        line=dict(color='white', width=2), marker=dict(color=marker_colors_price, size=6, line=dict(width=1, color='white'))
+        x=data[x_axis_col], y=data['Close'], name='Harga',
+        text=data['text_change'],
+        textposition="bottom center",
+        # PERBAIKAN: Ubah warna teks % menjadi biru transparan
+        textfont=dict(size=10, color='rgba(135, 206, 250, 0.7)'),
+        mode='lines+markers+text',
+        customdata=data[['Change %']],
+        hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>',
+        line=dict(color='white', width=2),
+        marker=dict(color=marker_colors_price, size=6, line=dict(width=1, color='white'))
     ), secondary_y=False, row=1, col=1)
+
     fig.add_trace(go.Bar(
-        x=data[x_axis_col], y=data['Volume'], name='Total Volume', marker_color=marker_colors_price, opacity=0.9
+        x=data[x_axis_col], y=data['Volume'], name='Total Volume',
+        marker_color=marker_colors_price, opacity=0.9
     ), secondary_y=True, row=1, col=1)
+
+    # --- GRAFIK BAWAH: NET FOREIGN FLOW ---
     marker_colors_ff = np.where(data['Net Foreign Flow'] >= 0, '#2ca02c', '#d62728')
     fig.add_trace(go.Bar(
-        x=data[x_axis_col], y=data['Net Foreign Flow'], name='Net Foreign Flow', marker_color=marker_colors_ff, opacity=0.7
+        x=data[x_axis_col], y=data['Net Foreign Flow'], name='Net Foreign Flow',
+        marker_color=marker_colors_ff, opacity=0.7
     ), row=2, col=1)
-    max_price, min_price, max_vol = (data['Close'].max(), data['Close'].min(), data['Volume'].max()) if not data.empty else (1, 0, 1)
-    if max_price == min_price: price_range_min, price_range_max = (min_price * 0.95, max_price * 1.05)
+
+    # --- Penyesuaian Layout & Sumbu Y ---
+    max_price = data['Close'].max() if not data['Close'].empty else 1
+    min_price = data['Close'].min() if not data['Close'].empty else 0
+    max_vol = data['Volume'].max() if not data['Volume'].empty else 1
+    
+    if max_price == min_price:
+        price_range_min, price_range_max = (min_price * 0.95, max_price * 1.05)
     else:
         proportion, price_data_range = 0.70, max_price - min_price
         price_total_range = price_data_range / proportion
-        price_range_max, price_range_min = (max_price + (price_data_range * 0.05)), (max_price + (price_data_range * 0.05)) - price_total_range
-    fig.update_layout(title_text=title, title_font_size=22, template='plotly_dark', height=700, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)))
+        price_range_max = max_price + (price_data_range * 0.05)
+        price_range_min = price_range_max - price_total_range
+        
+    fig.update_layout(
+        title_text=title, title_font_size=22, template='plotly_dark', height=700,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14))
+    )
     fig.update_xaxes(showticklabels=False, row=1, col=1)
     fig.update_xaxes(title_text="Tanggal", tickfont_size=12, row=2, col=1)
+    
     fig.update_yaxes(title_text="Harga (Rp)", secondary_y=False, row=1, col=1, title_font_size=14, tickfont_size=12, range=[price_range_min, price_range_max])
     fig.update_yaxes(title_text="Volume", secondary_y=True, row=1, col=1, title_font_size=14, tickfont_size=12, showgrid=False, range=[0, max_vol * 3])
     fig.update_yaxes(title_text="Net FF", row=2, col=1, title_font_size=14, tickfont_size=12)
+    
     st.plotly_chart(fig, use_container_width=True)
 
 # --- Tampilan Utama dengan Tab ---
@@ -68,6 +106,7 @@ with tab_top25:
     st.header("Top 25 Saham Paling Potensial Hari Ini")
     st.markdown("Saham-saham ini diurutkan berdasarkan **Sistem Skor Cerdas** yang menggabungkan sinyal akumulasi, lonjakan volume, aliran dana asing, dan momentum harga positif.")
     if not df.empty:
+        df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
         latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
         latest_data['Vol_Factor'] = (latest_data['Volume'] / latest_data['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
         latest_data['Score'] = 0
@@ -91,24 +130,23 @@ with tab_chart:
     if not df.empty:
         all_stocks = sorted(df['Stock Code'].unique())
         
-        # --- PERBAIKAN: Logika Filter Cerdas ---
-        # Inisialisasi session state untuk melacak saham terakhir yang dipilih
-        if 'last_selected_stock' not in st.session_state:
-            st.session_state.last_selected_stock = None
+        # --- PERBAIKAN: Logika Filter Cerdas Otomatis Reset ---
+        if 'last_stock' not in st.session_state:
+            st.session_state.last_stock = None
 
-        selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0, key="stock_selector")
-        
-        # Jika saham yang dipilih berubah, reset filter tanggal
-        if st.session_state.last_selected_stock != selected_stock:
-            st.session_state.last_selected_stock = selected_stock
-            # Hapus state lama agar filter kembali ke default
-            if 'selected_months' in st.session_state:
-                del st.session_state['selected_months']
-            if 'selected_weeks' in st.session_state:
-                del st.session_state['selected_weeks']
+        selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
         
         stock_data = df[df["Stock Code"] == selected_stock].copy()
         
+        # Cek jika saham berubah, lalu reset state filter tanggal
+        if st.session_state.last_stock != selected_stock:
+            st.session_state.last_stock = selected_stock
+            if 'selected_months' in st.session_state:
+                del st.session_state.selected_months
+            if 'selected_weeks' in st.session_state:
+                del st.session_state.selected_weeks
+            st.rerun()
+
         if not stock_data.empty:
             latest_day_data = stock_data.iloc[-1]
             st.header(f"Analisis Detail: {selected_stock}")
@@ -133,10 +171,12 @@ with tab_chart:
             month_year_df = stock_data[['Month_Year_Sort', 'Month_Year_Display']].drop_duplicates().sort_values(by='Month_Year_Sort', ascending=False)
             available_months = month_year_df['Month_Year_Display'].tolist()
             
-            selected_months = st.sidebar.multiselect("2. Pilih Bulan-Tahun", available_months, default=available_months[0] if available_months else None, key="selected_months")
+            selected_months = st.sidebar.multiselect("2. Pilih Bulan-Tahun", available_months, key="selected_months", default=available_months[0] if available_months else None)
             
             if selected_months: weeks_in_months = sorted(stock_data[stock_data['Month_Year_Display'].isin(selected_months)]['Week'].unique(), reverse=True)
             else: weeks_in_months = []
+            
+            if 'selected_weeks' in st.session_state: st.session_state.selected_weeks = [w for w in st.session_state.selected_weeks if w in weeks_in_months]
             
             btn_col1, btn_col2 = st.sidebar.columns(2)
             if btn_col1.button("Pilih Semua Minggu", key="select_all_weeks", use_container_width=True): 
