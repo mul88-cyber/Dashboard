@@ -38,7 +38,7 @@ df = load_data()
 # --- Fungsi Grafik Final ---
 def create_aligned_chart(data, x_axis_col, title):
     """
-    Membuat grafik combo dengan teks Change % yang tampil permanen di atas/bawah marker.
+    Membuat grafik combo dengan teks volume di dalam bar.
     """
     if data.empty:
         st.warning("Tidak ada data untuk rentang minggu yang dipilih.")
@@ -49,48 +49,48 @@ def create_aligned_chart(data, x_axis_col, title):
         vertical_spacing=0.05, row_heights=[0.7, 0.3],
         specs=[[{"secondary_y": True}], [{}]])
 
-    # --- PERBAIKAN: Menyiapkan dan menampilkan teks Change % ---
-    marker_colors = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
-    # Buat teks untuk ditampilkan di grafik, tambahkan '+' untuk angka positif
-    data['text_change'] = data['Change %'].apply(lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%")
+    # --- PERBAIKAN: Format Angka Bahasa Indonesia ---
+    def format_volume_text_id(num):
+        if num == 0: return ''
+        if abs(num) >= 1_000_000_000:
+            return f'{num / 1_000_000_000:.1f}M'
+        if abs(num) >= 1_000_000:
+            return f'{num / 1_000_000:.1f}Jt'
+        if abs(num) >= 1_000:
+            return f'{num / 1_000:.1f}Rb'
+        return f'{num:.0f}'
 
-    # Bar volume
-    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Buy'], name='Asing Beli', marker_color='#2ca02c'), row=1, col=1)
-    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Sell'], name='Asing Jual', marker_color='#d62728'), row=1, col=1)
-    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Local Volume'], name='Lokal', marker_color='#1f77b4'), row=1, col=1)
+    # Siapkan data teks yang sudah diformat
+    text_fb = data['Foreign Buy'].apply(format_volume_text_id)
+    text_fs = data['Foreign Sell'].apply(format_volume_text_id)
+    text_local = data['Local Volume'].apply(format_volume_text_id)
     
-    # Garis harga dengan teks permanen
+    # Tambahkan bar dengan parameter teks
+    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Buy'], name='Asing Beli', marker_color='#2ca02c', text=text_fb, textposition='inside', textangle=-90, insidetextanchor='middle', textfont=dict(color='white', size=10)), row=1, col=1)
+    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Foreign Sell'], name='Asing Jual', marker_color='#d62728', text=text_fs, textposition='inside', textangle=-90, insidetextanchor='middle', textfont=dict(color='white', size=10)), row=1, col=1)
+    fig.add_trace(go.Bar(x=data[x_axis_col], y=data['Local Volume'], name='Lokal', marker_color='#1f77b4', text=text_local, textposition='inside', textangle=-90, insidetextanchor='middle', textfont=dict(color='white', size=10)), row=1, col=1)
+    
+    # Garis harga
+    marker_colors = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
     fig.add_trace(go.Scatter(
-        x=data[x_axis_col],
-        y=data['Close'],
-        name='Harga',
-        # Tampilkan teks dari kolom 'text_change'
-        text=data['text_change'],
-        textposition="bottom center", # Posisi teks: bawah tengah dari marker
-        textfont=dict(
-            size=10,
-            color='white'
-        ),
-        mode='lines+markers+text', # Tambahkan 'text' ke mode
-        line=dict(color='white', width=2),
+        x=data[x_axis_col], y=data['Close'], name='Harga', customdata=data[['Change %']],
+        hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>',
+        line=dict(color='white', width=2), mode='lines+markers',
         marker=dict(color=marker_colors, size=6, line=dict(width=1, color='white'))
     ), secondary_y=True, row=1, col=1)
 
-    # Grafik Bawah: Frekuensi
+    # Grafik Frekuensi
     fig.add_trace(go.Scatter(x=data[x_axis_col], y=data['Frequency'], name='Frekuensi', mode='lines', line=dict(color='#ff7f0e', width=2), fill='tozeroy'), row=2, col=1)
 
     # Logika rentang sumbu Y
-    max_vol = data['Volume'].max() if not data['Volume'].empty else 1
-    max_price = data['Close'].max() if not data['Close'].empty else 1
-    min_price = data['Close'].min() if not data['Close'].empty else 0
+    max_vol, max_price, min_price = (data['Volume'].max(), data['Close'].max(), data['Close'].min()) if not data.empty else (1, 1, 0)
     if max_price == min_price:
         price_range_min, price_range_max = (min_price * 0.95, max_price * 1.05)
     else:
         proportion, price_data_range = 0.70, max_price - min_price
         price_total_range = price_data_range / proportion
-        price_range_max = max_price + (price_data_range * 0.05)
-        price_range_min = price_range_max - price_total_range
-        
+        price_range_max, price_range_min = (max_price + (price_data_range * 0.05), (max_price + (price_data_range * 0.05)) - price_total_range)
+    
     fig.update_layout(title_text=title, title_font_size=22, template='plotly_dark', height=600, barmode='stack', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)))
     fig.update_xaxes(tickfont_size=12)
     fig.update_yaxes(title_font_size=16, tickfont_size=12)
@@ -137,19 +137,14 @@ with tab_screener:
     if not df.empty:
         latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
         col1, col2, col3 = st.columns(3)
-        with col1:
-            filter_vol = st.checkbox("Filter Lonjakan Volume", value=True, key="vol_filter")
-        with col2:
-            filter_val = st.checkbox("Filter Lonjakan Nilai", value=False, key="val_filter")
-        with col3:
-            multiplier = st.number_input("Minimal Kenaikan (x kali lipat)", min_value=1.0, value=5.0, step=0.5, key="multiplier")
+        with col1: filter_vol = st.checkbox("Filter Lonjakan Volume", value=True, key="vol_filter")
+        with col2: filter_val = st.checkbox("Filter Lonjakan Nilai", value=False, key="val_filter")
+        with col3: multiplier = st.number_input("Minimal Kenaikan (x kali lipat)", min_value=1.0, value=5.0, step=0.5, key="multiplier")
         latest_data['Vol_Factor'] = (latest_data['Volume'] / latest_data['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
         latest_data['Val_Factor'] = (latest_data['Value'] / latest_data['MA20_val']).replace([np.inf, -np.inf], 0).fillna(0)
         conditions = []
-        if filter_vol:
-            conditions.append(latest_data['Vol_Factor'] >= multiplier)
-        if filter_val:
-            conditions.append(latest_data['Val_Factor'] >= multiplier)
+        if filter_vol: conditions.append(latest_data['Vol_Factor'] >= multiplier)
+        if filter_val: conditions.append(latest_data['Val_Factor'] >= multiplier)
         st.divider()
         if conditions:
             final_condition = pd.concat(conditions, axis=1).any(axis=1)
