@@ -32,47 +32,60 @@ df = load_data()
 # --- Fungsi Grafik Final ---
 def create_aligned_chart(data, x_axis_col, title):
     """
-    Membuat grafik baru yang lebih simpel dan valid:
-    - Atas: Grafik Harga
-    - Bawah: Bar Chart untuk Net Foreign Flow
+    Membuat grafik 3 tingkat: Harga, Volume, dan Net Foreign Flow.
     """
     if data.empty: return
 
     fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True,
-        vertical_spacing=0.03, row_heights=[0.6, 0.4]
+        rows=3, cols=1, shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=[0.5, 0.25, 0.25] # Beri porsi lebih untuk harga
     )
 
-    # --- GRAFIK ATAS: HARGA ---
+    # --- GRAFIK #1: HARGA ---
     marker_colors_price = np.where(data['Change %'] >= 0, '#2ca02c', '#d62728')
+    data['text_change'] = data['Change %'].apply(lambda x: f"+{x:.2f}%" if x > 0 else f"{x:.2f}%")
+    
     fig.add_trace(go.Scatter(
         x=data[x_axis_col], y=data['Close'], name='Harga',
+        text=data['text_change'],
+        textposition="bottom center",
+        textfont=dict(size=10, color='white'),
+        mode='lines+markers+text', # Tampilkan teks persen permanen
         customdata=data[['Change %']],
         hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>',
-        line=dict(color='white', width=2), mode='lines+markers',
+        line=dict(color='white', width=2),
         marker=dict(color=marker_colors_price, size=6, line=dict(width=1, color='white'))
     ), row=1, col=1)
 
-    # --- GRAFIK BAWAH: NET FOREIGN FLOW (BAR CHART) ---
-    marker_colors_ff = np.where(data['Net Foreign Flow'] >= 0, '#2ca02c', '#d62728') # Hijau untuk Net Buy, Merah untuk Net Sell
+    # --- GRAFIK #2: TOTAL VOLUME ---
+    fig.add_trace(go.Bar(
+        x=data[x_axis_col], y=data['Volume'], name='Total Volume',
+        marker_color=marker_colors_price, opacity=0.7
+    ), row=2, col=1)
+    
+    # --- GRAFIK #3: NET FOREIGN FLOW ---
+    marker_colors_ff = np.where(data['Net Foreign Flow'] >= 0, '#2ca02c', '#d62728')
     fig.add_trace(go.Bar(
         x=data[x_axis_col], y=data['Net Foreign Flow'], name='Net Foreign Flow',
-        marker_color=marker_colors_ff,
-        customdata=data[['Volume']],
-        hovertemplate='<b>%{x|%d %b %Y}</b><br>Net Foreign Flow: %{y:,.0f}<br>Total Volume: %{customdata[0]:,.0f}<extra></extra>'
-    ), row=2, col=1)
+        marker_color=marker_colors_ff
+    ), row=3, col=1)
 
     # --- Penyesuaian Layout ---
     fig.update_layout(
-        title_text=title, title_font_size=22, template='plotly_dark', height=600,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14))
+        title_text=title, title_font_size=22, template='plotly_dark', height=700,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=14)),
+        xaxis_rangeslider_visible=False
     )
+    # Sembunyikan label X untuk grafik atas & tengah
     fig.update_xaxes(showticklabels=False, row=1, col=1)
-    fig.update_xaxes(title_text="Tanggal", tickfont_size=12, row=2, col=1)
+    fig.update_xaxes(showticklabels=False, row=2, col=1)
+    fig.update_xaxes(title_text="Tanggal", tickfont_size=12, row=3, col=1)
     
     # Atur Sumbu Y
-    fig.update_yaxes(title_text="Harga (Rp)", title_font_size=16, tickfont_size=12, row=1, col=1)
-    fig.update_yaxes(title_text="Net Foreign Flow", title_font_size=16, tickfont_size=12, row=2, col=1)
+    fig.update_yaxes(title_text="Harga (Rp)", title_font_size=14, tickfont_size=12, row=1, col=1)
+    fig.update_yaxes(title_text="Volume", title_font_size=14, tickfont_size=12, row=2, col=1)
+    fig.update_yaxes(title_text="Net FF", title_font_size=14, tickfont_size=12, row=3, col=1)
     
     st.plotly_chart(fig, use_container_width=True)
 
@@ -104,12 +117,7 @@ with tab_chart:
     st.sidebar.header("🔍 Filter Analisis Detail")
     st.sidebar.divider()
     if not df.empty:
-        # Hapus 'Local Volume' karena tidak dipakai di grafik baru
-        if 'Local Volume' in df.columns:
-            df_chart = df.drop(columns=['Local Volume'])
-        else:
-            df_chart = df
-            
+        df_chart = df.copy()
         all_stocks = sorted(df_chart['Stock Code'].unique())
         selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0, key="stock_selector")
         stock_data = df_chart[df_chart["Stock Code"] == selected_stock].copy()
