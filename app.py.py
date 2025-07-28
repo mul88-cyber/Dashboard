@@ -5,19 +5,17 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_js_eval import streamlit_js_eval
-from streamlit_copy_to_clipboard import st_copy_to_clipboard
+from streamlit_clipboard import st_clipboard # PERBAIKAN: Import library yang benar
 
 # --- Konfigurasi Halaman & CSS Kustom ---
 st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
 st.markdown("""
 <style>
-/* Ukuran font Tab */
+/* CSS Kustom */
 button[data-baseweb="tab"] {
     font-size: 18px; font-weight: bold; padding-top: 10px !important; padding-bottom: 10px !important;
 }
-/* Ukuran font nilai di kartu metrik */
 div[data-testid="stMetricValue"] { font-size: 22px; }
-/* Ukuran font label di kartu metrik */
 div[data-testid="stMetricLabel"] { font-size: 15px; }
 </style>
 """, unsafe_allow_html=True)
@@ -140,7 +138,8 @@ with tab_top25:
         
         if not top_25_df.empty:
             codes_to_copy = "\n".join(top_25_df['Stock Code'].tolist())
-            st_copy_to_clipboard(codes_to_copy, "Salin 25 Kode Saham")
+            # PERBAIKAN: Panggil fungsi dari library yang benar
+            st_clipboard(codes_to_copy, label="Salin 25 Kode Saham")
             st.write("")
 
         display_cols = ['Stock Code', 'Company Name', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal']
@@ -162,7 +161,6 @@ with tab_chart:
     st.sidebar.divider()
     if not df.empty:
         all_stocks = sorted(df['Stock Code'].unique())
-        
         try:
             default_index = all_stocks.index(st.session_state.selected_stock)
         except (ValueError, KeyError):
@@ -170,7 +168,6 @@ with tab_chart:
         
         selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=default_index, key="stock_selector_detail")
         st.session_state.selected_stock = selected_stock
-        
         stock_data = df[df["Stock Code"] == selected_stock].copy()
         
         if not stock_data.empty:
@@ -245,8 +242,7 @@ with tab_screener:
             
             screen_width = streamlit_js_eval(js_expressions='screen.width', key='SCR_WIDTH')
             is_mobile = (screen_width < 768) if screen_width is not None else False
-            mobile_cols = ['Stock Code', 'Close', 'Change %', 'Vol_Factor']
-            desktop_cols = ['Stock Code', 'Close', 'Change %', 'Volume', 'Vol_Factor', 'MA20_vol', 'Value', 'Val_Factor', 'MA20_val']
+            mobile_cols, desktop_cols = ['Stock Code', 'Close', 'Change %', 'Vol_Factor'], ['Stock Code', 'Close', 'Change %', 'Volume', 'Vol_Factor', 'MA20_vol', 'Value', 'Val_Factor', 'MA20_val']
             rename_cols = {'Stock Code': 'Saham', 'Vol_Factor': 'Vol x MA20', 'MA20_vol': 'Rata2 Vol 20D', 'Val_Factor': 'Val x MA20', 'MA20_val': 'Rata2 Val 20D'}
             
             df_to_display_screener = result_df[desktop_cols if not is_mobile else mobile_cols].rename(columns=rename_cols)
