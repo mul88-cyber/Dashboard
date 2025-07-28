@@ -4,4 +4,3 @@ plotly
 matplotlib
 numpy
 streamlit-js-eval
-streamlit-aggrid
