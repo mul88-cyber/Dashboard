@@ -5,18 +5,36 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_js_eval import streamlit_js_eval
-from streamlit_copy_button import copy_button # PERBAIKAN: Import library yang benar
+import streamlit.components.v1 as components
 
 # --- Konfigurasi Halaman & CSS Kustom ---
 st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
 st.markdown("""
 <style>
-/* CSS Kustom */
+/* Ukuran font Tab */
 button[data-baseweb="tab"] {
     font-size: 18px; font-weight: bold; padding-top: 10px !important; padding-bottom: 10px !important;
 }
+/* Ukuran font nilai di kartu metrik */
 div[data-testid="stMetricValue"] { font-size: 22px; }
+/* Ukuran font label di kartu metrik */
 div[data-testid="stMetricLabel"] { font-size: 15px; }
+/* Style untuk tombol copy kustom */
+.copy-btn {
+    display: inline-block;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #FFFFFF;
+    background-color: #0068C9;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+}
+.copy-btn:hover { background-color: #0055A4; }
+.copy-btn:active { background-color: #003F7A; }
 </style>
 """, unsafe_allow_html=True)
 st.title("🚀 Dashboard Analisis Saham Pro")
@@ -138,8 +156,24 @@ with tab_top25:
         
         if not top_25_df.empty:
             codes_to_copy = "\n".join(top_25_df['Stock Code'].tolist())
-            # PERBAIKAN: Panggil fungsi dari library yang benar
-            copy_button(codes_to_copy, "Salin 25 Kode Saham")
+            
+            components.html(f"""
+                <textarea id="copy-text" style="opacity: 0; position: absolute; pointer-events: none;">{codes_to_copy}</textarea>
+                <button class="copy-btn" onclick="copyToClipboard()">Salin 25 Kode Saham</button>
+                <script>
+                    function copyToClipboard() {{
+                        var copyText = document.getElementById("copy-text");
+                        copyText.select();
+                        copyText.setSelectionRange(0, 99999);
+                        document.execCommand("copy");
+                        
+                        var btn = document.querySelector('.copy-btn');
+                        var originalText = btn.innerHTML;
+                        btn.innerHTML = 'Tersalin!';
+                        setTimeout(function(){{ btn.innerHTML = originalText; }}, 2000);
+                    }}
+                </script>
+            """, height=50)
             st.write("")
 
         display_cols = ['Stock Code', 'Company Name', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal']
@@ -168,6 +202,7 @@ with tab_chart:
         
         selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=default_index, key="stock_selector_detail")
         st.session_state.selected_stock = selected_stock
+        
         stock_data = df[df["Stock Code"] == selected_stock].copy()
         
         if not stock_data.empty:
