@@ -5,4 +5,4 @@ matplotlib
 numpy
 streamlit-js-eval
 streamlit-aggrid
-streamlit-clipboard
+streamlit-copy-button
