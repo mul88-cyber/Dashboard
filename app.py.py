@@ -11,12 +11,15 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
 st.markdown("""
 <style>
-/* CSS Kustom */
+/* Ukuran font Tab */
 button[data-baseweb="tab"] {
     font-size: 18px; font-weight: bold; padding-top: 10px !important; padding-bottom: 10px !important;
 }
+/* Ukuran font nilai di kartu metrik */
 div[data-testid="stMetricValue"] { font-size: 22px; }
+/* Ukuran font label di kartu metrik */
 div[data-testid="stMetricLabel"] { font-size: 15px; }
+/* Style untuk tombol copy kustom */
 .copy-btn {
     display: inline-block; padding: 8px 12px; font-size: 14px; font-weight: bold;
     color: #FFFFFF; background-color: #0068C9; border: none; border-radius: 8px;
@@ -107,9 +110,8 @@ with tab_top25:
     if not df.empty:
         with st.spinner("Menghitung performa historis dan skor..."):
             latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
-            today = latest_data['Last Trading Date'].max()
-            perf_data = []
             
+            perf_data = []
             for code, group in df.groupby('Stock Code'):
                 if group.empty or len(group) < 2: continue
                 latest_row = group.iloc[-1]
@@ -137,21 +139,16 @@ with tab_top25:
             eligible_stocks.loc[eligible_stocks['Vol_Factor'] >= 10, 'Score'] += 3
             eligible_stocks.loc[(eligible_stocks['Vol_Factor'] >= 5) & (eligible_stocks['Vol_Factor'] < 10), 'Score'] += 2
             eligible_stocks.loc[eligible_stocks['Foreign Flow Signal'] == 'Inflow', 'Score'] += 2
-            eligible_stocks.loc[latest_data['Change %'] > 0, 'Score'] += 1
+            eligible_stocks.loc[eligible_stocks['Change %'] > 0, 'Score'] += 1
             
             top_25_df = eligible_stocks.sort_values(by=['Score', 'Vol_Factor'], ascending=False).head(25)
 
         st.success(f"Ditemukan **{len(top_25_df)}** saham potensial (dari {len(eligible_stocks)} yang lolos filter risiko).")
         
-        display_cols = ['Stock Code', 'Company Name', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal']
-        rename_cols = {'Stock Code': 'Saham', 'Company Name': 'Nama Perusahaan', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow'}
-        df_to_display = top_25_df[display_cols].rename(columns=rename_cols)
-
-        # --- PERBAIKAN: Tombol Copy untuk menyalin data tabel ---
-        if not df_to_display.empty:
+        if not top_25_df.empty:
             cols_to_copy = ['Saham', 'Close', 'Change %', 'Score', 'Sinyal Utama', 'Vol x MA20', 'Foreign Flow']
-            # Konversi dataframe ke string format CSV (dipisahkan tab agar mudah di-paste ke Excel)
-            table_string_to_copy = df_to_display[cols_to_copy].to_csv(sep='\t', index=False)
+            df_for_copy = top_25_df.rename(columns={'Stock Code': 'Saham', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow'})
+            table_string_to_copy = df_for_copy[cols_to_copy].to_csv(sep='\t', index=False)
             
             components.html(f"""
                 <textarea id="copy-text" style="opacity: 0; position: absolute; pointer-events: none;">{table_string_to_copy}</textarea>
@@ -171,7 +168,11 @@ with tab_top25:
                 </script>
             """, height=50)
             st.write("")
-        
+
+        display_cols = ['Stock Code', 'Company Name', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal']
+        rename_cols = {'Stock Code': 'Saham', 'Company Name': 'Nama Perusahaan', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow'}
+        df_to_display = top_25_df[display_cols].rename(columns=rename_cols)
+
         response = create_interactive_table(df_to_display, 'top25_table')
         if response['selected_rows'] is not None and not response['selected_rows'].empty:
             selected_code = response['selected_rows'].iloc[0]['Saham']
