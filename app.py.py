@@ -142,9 +142,9 @@ with tab_top25:
 
         response = create_interactive_table(df_to_display, 'top25_table')
         
-        # PERBAIKAN: Pengecekan baris terpilih yang lebih aman
-        if response['selected_rows'] and len(response['selected_rows']) > 0:
-            selected_code = response['selected_rows'][0]['Saham']
+        # PERBAIKAN: Pengecekan baris terpilih yang aman
+        if response['selected_rows'] is not None and not response['selected_rows'].empty:
+            selected_code = response['selected_rows'].iloc[0]['Saham']
             if st.session_state.selected_stock != selected_code:
                 st.session_state.selected_stock = selected_code
                 st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
@@ -242,20 +242,16 @@ with tab_screener:
             desktop_cols = ['Stock Code', 'Close', 'Change %', 'Volume', 'Vol_Factor', 'MA20_vol', 'Value', 'Val_Factor', 'MA20_val']
             rename_cols = {'Stock Code': 'Saham', 'Vol_Factor': 'Vol x MA20', 'MA20_vol': 'Rata2 Vol 20D', 'Val_Factor': 'Val x MA20', 'MA20_val': 'Rata2 Val 20D'}
             
-            # Tampilkan tabel biasa jika mobile, interaktif jika desktop
-            if is_mobile:
-                format_dict = {'Close': "{:,.0f}", 'Change %': "{:,.2f}%", 'Vol_Factor': "{:,.1f}x"}
-                st.dataframe(result_df[mobile_cols].rename(columns=rename_cols).style.format(format_dict).background_gradient(cmap='Greens', subset=['Vol x MA20']), use_container_width=True)
-            else:
-                df_to_display_screener = result_df[desktop_cols].rename(columns=rename_cols)
-                response_screener = create_interactive_table(df_to_display_screener, 'screener_table')
-                # PERBAIKAN: Pengecekan baris terpilih yang lebih aman
-                if response_screener['selected_rows'] and len(response_screener['selected_rows']) > 0:
-                    selected_code = response_screener['selected_rows'][0]['Saham']
-                    if st.session_state.selected_stock != selected_code:
-                        st.session_state.selected_stock = selected_code
-                        st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
-                        st.rerun()
+            df_to_display_screener = result_df[desktop_cols if not is_mobile else mobile_cols].rename(columns=rename_cols)
+            response_screener = create_interactive_table(df_to_display_screener, 'screener_table')
+            
+            # PERBAIKAN: Pengecekan baris terpilih yang aman
+            if response_screener['selected_rows'] is not None and not response_screener['selected_rows'].empty:
+                selected_code = response_screener['selected_rows'].iloc[0]['Saham']
+                if st.session_state.selected_stock != selected_code:
+                    st.session_state.selected_stock = selected_code
+                    st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
+                    st.rerun()
         else:
             st.info("Pilih setidaknya satu kriteria di atas untuk memulai screening.")
     else:
