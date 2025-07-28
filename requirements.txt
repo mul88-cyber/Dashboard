@@ -4,3 +4,5 @@ plotly
 matplotlib
 numpy
 streamlit-js-eval
+streamlit-aggrid
+streamlit-copy-to-clipboard
