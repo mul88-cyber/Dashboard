@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 from streamlit_js_eval import streamlit_js_eval
 
 # --- Konfigurasi Halaman & CSS Kustom ---
-st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
+st.set_page_config(page_title="Dashboard Code Pro", layout="wide")
 
 # Kustomisasi CSS untuk mengubah ukuran font
 st.markdown("""
@@ -29,7 +29,7 @@ div[data-testid="stMetricLabel"] {
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🚀 Dashboard Analisis Saham Pro")
+st.title("🚀 Dashboard Analisis Code Pro")
 
 # --- Load Data & Kalkulasi ---
 @st.cache_data(ttl=3600)
@@ -84,11 +84,11 @@ def create_aligned_chart(data, x_axis_col, title):
     st.plotly_chart(fig, use_container_width=True)
 
 # --- Tampilan Utama dengan Tab ---
-tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Saham Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"])
+tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Code Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"])
 
 with tab_top25:
-    st.header("Top 25 Saham Paling Potensial Hari Ini")
-    st.markdown("Saham-saham ini diurutkan berdasarkan **Sistem Skor Cerdas** yang menggabungkan sinyal akumulasi, lonjakan volume, aliran dana asing, dan momentum harga positif.")
+    st.header("Top 25 Code Paling Potensial Hari Ini")
+    st.markdown("Code-Code ini diurutkan berdasarkan **Sistem Skor Cerdas** yang menggabungkan sinyal akumulasi, lonjakan volume, aliran dana asing, dan momentum harga positif.")
     if not df.empty:
         latest_data = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
         latest_data['Vol_Factor'] = (latest_data['Volume'] / latest_data['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
@@ -100,9 +100,9 @@ with tab_top25:
         latest_data.loc[latest_data['Foreign Flow Signal'] == 'Inflow', 'Score'] += 2
         latest_data.loc[latest_data['Change %'] > 0, 'Score'] += 1
         top_25_df = latest_data.sort_values(by='Score', ascending=False).head(25)
-        st.success(f"Menampilkan **{len(top_25_df)}** saham teratas berdasarkan data tanggal **{latest_data['Last Trading Date'].max().strftime('%d %b %Y')}**")
+        st.success(f"Menampilkan **{len(top_25_df)}** Code teratas berdasarkan data tanggal **{latest_data['Last Trading Date'].max().strftime('%d %b %Y')}**")
         display_cols = ['Stock Code', 'Company Name', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal']
-        rename_cols = {'Stock Code': 'Saham', 'Company Name': 'Nama Perusahaan', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow'}
+        rename_cols = {'Stock Code': 'Code', 'Company Name': 'Nama Perusahaan', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow'}
         format_dict = {'Close': "{:,.0f}", 'Change %': "{:,.2f}%", 'Score': "{:,.0f} Poin", 'Vol x MA20': "{:,.1f}x"}
         st.dataframe(top_25_df[display_cols].rename(columns=rename_cols).style.format(format_dict).background_gradient(cmap='Greens', subset=['Score']), use_container_width=True)
     else: st.warning("Data tidak tersedia untuk menampilkan Top 25.")
@@ -113,7 +113,7 @@ with tab_chart:
     if not df.empty:
         all_stocks = sorted(df['Stock Code'].unique())
         if 'last_stock' not in st.session_state: st.session_state.last_stock = None
-        selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
+        selected_stock = st.sidebar.selectbox("1. Pilih Kode Code", all_stocks, index=all_stocks.index("BBRI") if "BBRI" in all_stocks else 0)
         stock_data = df[df["Stock Code"] == selected_stock].copy()
         if st.session_state.last_stock != selected_stock:
             st.session_state.last_stock = selected_stock
@@ -171,8 +171,8 @@ with tab_chart:
     else: st.warning("Gagal memuat data.")
 
 with tab_screener:
-    st.header("Screener Saham Berdasarkan Lonjakan Volume & Value")
-    st.markdown("Cari saham yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
+    st.header("Screener Code Berdasarkan Lonjakan Volume & Value")
+    st.markdown("Cari Code yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
     if not df.empty:
         latest_data_screener = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
         filter_col1, filter_col2 = st.columns([2,1])
@@ -190,11 +190,11 @@ with tab_screener:
             final_condition = pd.concat(conditions, axis=1).any(axis=1)
             result_df = latest_data_screener[final_condition].copy()
             result_df.sort_values(by='Vol_Factor', ascending=False, inplace=True)
-            st.success(f"Ditemukan **{len(result_df)}** saham yang memenuhi kriteria.")
+            st.success(f"Ditemukan **{len(result_df)}** Code yang memenuhi kriteria.")
             screen_width = streamlit_js_eval(js_expressions='screen.width', key='SCR_WIDTH')
             is_mobile = (screen_width < 768) if screen_width is not None else False
             mobile_cols, desktop_cols = ['Stock Code', 'Close', 'Change %', 'Vol_Factor'], ['Stock Code', 'Close', 'Change %', 'Volume', 'Vol_Factor', 'MA20_vol', 'Value', 'Val_Factor', 'MA20_val']
-            rename_cols = {'Stock Code': 'Saham', 'Vol_Factor': 'Vol x MA20', 'MA20_vol': 'Rata2 Vol 20D', 'Val_Factor': 'Val x MA20', 'MA20_val': 'Rata2 Val 20D'}
+            rename_cols = {'Stock Code': 'Code', 'Vol_Factor': 'Vol x MA20', 'MA20_vol': 'Rata2 Vol 20D', 'Val_Factor': 'Val x MA20', 'MA20_val': 'Rata2 Val 20D'}
             format_dict = {'Close': "{:,.0f}", 'Change %': "{:,.2f}%", 'Volume': "{:,.0f}", 'Vol x MA20': "{:,.1f}x", 'Rata2 Vol 20D': "{:,.0f}", 'Value': "{:,.0f}", 'Val x MA20': "{:,.1f}x", 'Rata2 Val 20D': "{:,.0f}"}
             if is_mobile:
                 st.dataframe(result_df[mobile_cols].rename(columns=rename_cols).style.format(format_dict).background_gradient(cmap='Greens', subset=['Vol x MA20']), use_container_width=True)
