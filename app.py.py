@@ -12,19 +12,12 @@ st.markdown("""
 <style>
 /* Ukuran font Tab */
 button[data-baseweb="tab"] {
-    font-size: 18px;
-    font-weight: bold;
-    padding-top: 10px !important;
-    padding-bottom: 10px !important;
+    font-size: 18px; font-weight: bold; padding-top: 10px !important; padding-bottom: 10px !important;
 }
 /* Ukuran font nilai di kartu metrik */
-div[data-testid="stMetricValue"] {
-    font-size: 22px;
-}
+div[data-testid="stMetricValue"] { font-size: 22px; }
 /* Ukuran font label di kartu metrik */
-div[data-testid="stMetricLabel"] {
-    font-size: 15px;
-}
+div[data-testid="stMetricLabel"] { font-size: 15px; }
 </style>
 """, unsafe_allow_html=True)
 st.title("🚀 Dashboard Analisis Saham Pro")
@@ -97,12 +90,9 @@ def create_interactive_table(data, key):
 # --- Inisialisasi Session State ---
 if 'selected_stock' not in st.session_state:
     st.session_state.selected_stock = "BBRI" if "BBRI" in df['Stock Code'].unique() else df['Stock Code'].unique()[0]
-if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = "🏆 Top 25 Saham Potensial"
 
 # --- Tampilan Utama dengan Tab ---
-tab_names = ["🏆 Top 25 Saham Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"]
-tab_top25, tab_chart, tab_screener = st.tabs(tab_names)
+tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Saham Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"])
 
 with tab_top25:
     st.header("Top 25 Saham Paling Potensial Hari Ini")
@@ -151,13 +141,14 @@ with tab_top25:
         df_to_display = top_25_df[display_cols].rename(columns=rename_cols)
 
         response = create_interactive_table(df_to_display, 'top25_table')
-        if response['selected_rows']:
+        
+        # PERBAIKAN: Pengecekan baris terpilih yang lebih aman
+        if response['selected_rows'] and len(response['selected_rows']) > 0:
             selected_code = response['selected_rows'][0]['Saham']
             if st.session_state.selected_stock != selected_code:
                 st.session_state.selected_stock = selected_code
                 st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
-    else:
-        st.warning("Data tidak tersedia.")
+                st.rerun()
 
 with tab_chart:
     st.sidebar.header("🔍 Filter Analisis Detail")
@@ -176,6 +167,7 @@ with tab_chart:
         stock_data = df[df["Stock Code"] == selected_stock].copy()
         
         if not stock_data.empty:
+            df['Local Volume'] = df['Volume'] - (df['Foreign Buy'] + df['Foreign Sell'])
             latest_day_data = stock_data.iloc[-1]
             company_name = latest_day_data.get('Company Name', selected_stock)
             st.markdown(f"### Analisis Detail: {selected_stock} - {company_name}")
@@ -244,22 +236,26 @@ with tab_screener:
             result_df.sort_values(by='Vol_Factor', ascending=False, inplace=True)
             st.success(f"Ditemukan **{len(result_df)}** saham yang memenuhi kriteria.")
             
-            # Tampilan Tabel Adaptif
             screen_width = streamlit_js_eval(js_expressions='screen.width', key='SCR_WIDTH')
             is_mobile = (screen_width < 768) if screen_width is not None else False
             mobile_cols = ['Stock Code', 'Close', 'Change %', 'Vol_Factor']
             desktop_cols = ['Stock Code', 'Close', 'Change %', 'Volume', 'Vol_Factor', 'MA20_vol', 'Value', 'Val_Factor', 'MA20_val']
             rename_cols = {'Stock Code': 'Saham', 'Vol_Factor': 'Vol x MA20', 'MA20_vol': 'Rata2 Vol 20D', 'Val_Factor': 'Val x MA20', 'MA20_val': 'Rata2 Val 20D'}
             
-            df_to_display_screener = result_df[desktop_cols if not is_mobile else mobile_cols].rename(columns=rename_cols)
-            response_screener = create_interactive_table(df_to_display_screener, 'screener_table')
-            
-            if response_screener['selected_rows']:
-                selected_code = response_screener['selected_rows'][0]['Saham']
-                if st.session_state.selected_stock != selected_code:
-                    st.session_state.selected_stock = selected_code
-                    st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
-                    st.rerun()
+            # Tampilkan tabel biasa jika mobile, interaktif jika desktop
+            if is_mobile:
+                format_dict = {'Close': "{:,.0f}", 'Change %': "{:,.2f}%", 'Vol_Factor': "{:,.1f}x"}
+                st.dataframe(result_df[mobile_cols].rename(columns=rename_cols).style.format(format_dict).background_gradient(cmap='Greens', subset=['Vol x MA20']), use_container_width=True)
+            else:
+                df_to_display_screener = result_df[desktop_cols].rename(columns=rename_cols)
+                response_screener = create_interactive_table(df_to_display_screener, 'screener_table')
+                # PERBAIKAN: Pengecekan baris terpilih yang lebih aman
+                if response_screener['selected_rows'] and len(response_screener['selected_rows']) > 0:
+                    selected_code = response_screener['selected_rows'][0]['Saham']
+                    if st.session_state.selected_stock != selected_code:
+                        st.session_state.selected_stock = selected_code
+                        st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
+                        st.rerun()
         else:
             st.info("Pilih setidaknya satu kriteria di atas untuk memulai screening.")
     else:
