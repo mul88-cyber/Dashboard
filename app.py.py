@@ -105,11 +105,12 @@ with tab_top25:
             perf_data = []
             
             for code, group in df.groupby('Stock Code'):
-                if group.empty: continue
+                if group.empty or len(group) < 2: continue
                 latest_row = group.iloc[-1]
+                latest_date_stock = latest_row['Last Trading Date']
                 
                 def get_perf(offset):
-                    past_date = today - offset
+                    past_date = latest_date_stock - offset
                     past_data = group[group['Last Trading Date'] <= past_date]
                     if not past_data.empty:
                         past_price = past_data['Close'].iloc[-1]
@@ -141,14 +142,14 @@ with tab_top25:
         df_to_display = top_25_df[display_cols].rename(columns=rename_cols)
 
         response = create_interactive_table(df_to_display, 'top25_table')
-        
-        # PERBAIKAN: Pengecekan baris terpilih yang aman
         if response['selected_rows'] is not None and not response['selected_rows'].empty:
             selected_code = response['selected_rows'].iloc[0]['Saham']
             if st.session_state.selected_stock != selected_code:
                 st.session_state.selected_stock = selected_code
                 st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
                 st.rerun()
+    else:
+        st.warning("Data tidak tersedia.")
 
 with tab_chart:
     st.sidebar.header("🔍 Filter Analisis Detail")
@@ -244,8 +245,7 @@ with tab_screener:
             
             df_to_display_screener = result_df[desktop_cols if not is_mobile else mobile_cols].rename(columns=rename_cols)
             response_screener = create_interactive_table(df_to_display_screener, 'screener_table')
-            
-            # PERBAIKAN: Pengecekan baris terpilih yang aman
+
             if response_screener['selected_rows'] is not None and not response_screener['selected_rows'].empty:
                 selected_code = response_screener['selected_rows'].iloc[0]['Saham']
                 if st.session_state.selected_stock != selected_code:
