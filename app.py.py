@@ -11,15 +11,12 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
 st.markdown("""
 <style>
-/* Ukuran font Tab */
+/* CSS Kustom */
 button[data-baseweb="tab"] {
     font-size: 18px; font-weight: bold; padding-top: 10px !important; padding-bottom: 10px !important;
 }
-/* Ukuran font nilai di kartu metrik */
 div[data-testid="stMetricValue"] { font-size: 22px; }
-/* Ukuran font label di kartu metrik */
 div[data-testid="stMetricLabel"] { font-size: 15px; }
-/* Style untuk tombol copy kustom */
 .copy-btn {
     display: inline-block; padding: 8px 12px; font-size: 14px; font-weight: bold;
     color: #FFFFFF; background-color: #0068C9; border: none; border-radius: 8px;
@@ -114,14 +111,18 @@ with tab_top25:
             perf_data = []
             for code, group in df.groupby('Stock Code'):
                 if group.empty or len(group) < 2: continue
+                
+                group = group.sort_values(by='Last Trading Date')
                 latest_row = group.iloc[-1]
                 latest_date_stock = latest_row['Last Trading Date']
                 
                 def get_perf(offset):
-                    past_date = latest_date_stock - offset
-                    past_data = group[group['Last Trading Date'] <= past_date]
+                    target_date = latest_date_stock - offset
+                    # Cari tanggal terdekat dengan target
+                    past_data = group[group['Last Trading Date'] <= target_date]
                     if not past_data.empty:
-                        past_price = past_data['Close'].iloc[-1]
+                        closest_date = past_data.iloc[-1]
+                        past_price = closest_date['Close']
                         if past_price > 0:
                             return (latest_row['Close'] - past_price) / past_price * 100
                     return 0
@@ -130,6 +131,7 @@ with tab_top25:
 
             perf_df = pd.DataFrame(perf_data)
             latest_data = pd.merge(latest_data, perf_df, on='Stock Code', how='left').fillna(0)
+            
             eligible_stocks = latest_data[~((latest_data['Perf_1M'] > 70) | (latest_data['Perf_3M'] > 70) | (latest_data['Perf_6M'] > 70))].copy()
 
             eligible_stocks['Vol_Factor'] = (eligible_stocks['Volume'] / eligible_stocks['MA20_vol']).replace([np.inf, -np.inf], 0).fillna(0)
@@ -146,8 +148,8 @@ with tab_top25:
         st.success(f"Ditemukan **{len(top_25_df)}** saham potensial (dari {len(eligible_stocks)} yang lolos filter risiko).")
         
         if not top_25_df.empty:
-            cols_to_copy = ['Saham', 'Close', 'Change %', 'Score', 'Sinyal Utama', 'Vol x MA20', 'Foreign Flow']
-            df_for_copy = top_25_df.rename(columns={'Stock Code': 'Saham', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow'})
+            cols_to_copy = ['Saham', 'Close', 'Change %', 'Score', 'Sinyal Utama', 'Vol x MA20', 'Foreign Flow', 'Perf 1B', 'Perf 3B', 'Perf 6B']
+            df_for_copy = top_25_df.rename(columns={'Stock Code': 'Saham', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow', 'Perf_1M': 'Perf 1B', 'Perf_3M': 'Perf 3B', 'Perf_6M': 'Perf 6B'})
             table_string_to_copy = df_for_copy[cols_to_copy].to_csv(sep='\t', index=False)
             
             components.html(f"""
@@ -159,7 +161,6 @@ with tab_top25:
                         copyText.select();
                         copyText.setSelectionRange(0, 99999);
                         document.execCommand("copy");
-                        
                         var btn = document.querySelector('.copy-btn');
                         var originalText = btn.innerHTML;
                         btn.innerHTML = 'Tersalin!';
@@ -169,8 +170,8 @@ with tab_top25:
             """, height=50)
             st.write("")
 
-        display_cols = ['Stock Code', 'Company Name', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal']
-        rename_cols = {'Stock Code': 'Saham', 'Company Name': 'Nama Perusahaan', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow'}
+        display_cols = ['Stock Code', 'Company Name', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal', 'Perf_1M', 'Perf_3M', 'Perf_6M']
+        rename_cols = {'Stock Code': 'Saham', 'Company Name': 'Nama Perusahaan', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow', 'Perf_1M': 'Perf 1B', 'Perf_3M': 'Perf 3B', 'Perf_6M': 'Perf 6B'}
         df_to_display = top_25_df[display_cols].rename(columns=rename_cols)
 
         response = create_interactive_table(df_to_display, 'top25_table')
