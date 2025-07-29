@@ -8,7 +8,7 @@ from streamlit_js_eval import streamlit_js_eval
 import streamlit.components.v1 as components
 
 # --- Konfigurasi Halaman & CSS Kustom ---
-st.set_page_config(page_title="Dashboard Saham Pro", layout="wide")
+st.set_page_config(page_title="Dashboard Code Pro", layout="wide")
 st.markdown("""
 <style>
 /* CSS Kustom */
@@ -26,7 +26,7 @@ div[data-testid="stMetricLabel"] { font-size: 15px; }
 .copy-btn:active { background-color: #003F7A; }
 </style>
 """, unsafe_allow_html=True)
-st.title("🚀 Dashboard Analisis Saham Pro")
+st.title("🚀 Dashboard Analisis Code Pro")
 
 # --- Load Data & Kalkulasi ---
 @st.cache_data(ttl=3600)
@@ -98,11 +98,11 @@ if 'selected_stock' not in st.session_state:
     st.session_state.selected_stock = "BBRI" if "BBRI" in df['Stock Code'].unique() else df['Stock Code'].unique()[0]
 
 # --- Tampilan Utama dengan Tab ---
-tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Saham Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"])
+tab_top25, tab_chart, tab_screener = st.tabs(["🏆 Top 25 Code Potensial", "📊 Analisis Detail", "🔥 Screener Volume & Value"])
 
 with tab_top25:
-    st.header("Top 25 Saham Paling Potensial Hari Ini")
-    st.markdown("Saham diurutkan berdasarkan **Sistem Skor Cerdas**, dengan syarat **belum naik >70%** dalam 1, 3, atau 6 bulan terakhir.")
+    st.header("Top 25 Code Paling Potensial Hari Ini")
+    st.markdown("Code diurutkan berdasarkan **Sistem Skor Cerdas**, dengan syarat **belum naik >70%** dalam 1, 3, atau 6 bulan terakhir.")
     
     if not df.empty:
         with st.spinner("Menghitung performa historis dan skor..."):
@@ -145,11 +145,11 @@ with tab_top25:
             
             top_25_df = eligible_stocks.sort_values(by=['Score', 'Vol_Factor'], ascending=False).head(25)
 
-        st.success(f"Ditemukan **{len(top_25_df)}** saham potensial (dari {len(eligible_stocks)} yang lolos filter risiko).")
+        st.success(f"Ditemukan **{len(top_25_df)}** Code potensial (dari {len(eligible_stocks)} yang lolos filter risiko).")
         
         if not top_25_df.empty:
-            cols_to_copy = ['Saham', 'Close', 'Change %', 'Score', 'Sinyal Utama', 'Vol x MA20', 'Foreign Flow', 'Perf 1B', 'Perf 3B', 'Perf 6B']
-            df_for_copy = top_25_df.rename(columns={'Stock Code': 'Saham', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow', 'Perf_1M': 'Perf 1B', 'Perf_3M': 'Perf 3B', 'Perf_6M': 'Perf 6B'})
+            cols_to_copy = ['Code', 'Close', 'Change %', 'Score', 'Sinyal Utama', 'Vol x MA20', 'Foreign Flow', 'Perf 1B', 'Perf 3B', 'Perf 6B']
+            df_for_copy = top_25_df.rename(columns={'Stock Code': 'Code', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow', 'Perf_1M': 'Perf 1B', 'Perf_3M': 'Perf 3B', 'Perf_6M': 'Perf 6B'})
             table_string_to_copy = df_for_copy[cols_to_copy].to_csv(sep='\t', index=False)
             
             components.html(f"""
@@ -171,15 +171,15 @@ with tab_top25:
             st.write("")
 
         display_cols = ['Stock Code', 'Company Name', 'Close', 'Change %', 'Score', 'Final Signal', 'Vol_Factor', 'Foreign Flow Signal', 'Perf_1M', 'Perf_3M', 'Perf_6M']
-        rename_cols = {'Stock Code': 'Saham', 'Company Name': 'Nama Perusahaan', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow', 'Perf_1M': 'Perf 1B', 'Perf_3M': 'Perf 3B', 'Perf_6M': 'Perf 6B'}
+        rename_cols = {'Stock Code': 'Code', 'Company Name': 'Nama Perusahaan', 'Final Signal': 'Sinyal Utama', 'Vol_Factor': 'Vol x MA20', 'Foreign Flow Signal': 'Foreign Flow', 'Perf_1M': 'Perf 1B', 'Perf_3M': 'Perf 3B', 'Perf_6M': 'Perf 6B'}
         df_to_display = top_25_df[display_cols].rename(columns=rename_cols)
 
         response = create_interactive_table(df_to_display, 'top25_table')
         if response['selected_rows'] is not None and not response['selected_rows'].empty:
-            selected_code = response['selected_rows'].iloc[0]['Saham']
+            selected_code = response['selected_rows'].iloc[0]['Code']
             if st.session_state.selected_stock != selected_code:
                 st.session_state.selected_stock = selected_code
-                st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
+                st.warning(f"Code {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
                 st.rerun()
     else:
         st.warning("Data tidak tersedia.")
@@ -194,7 +194,7 @@ with tab_chart:
         except (ValueError, KeyError):
             default_index = all_stocks.index("BBRI") if "BBRI" in all_stocks else 0
         
-        selected_stock = st.sidebar.selectbox("1. Pilih Kode Saham", all_stocks, index=default_index, key="stock_selector_detail")
+        selected_stock = st.sidebar.selectbox("1. Pilih Kode Code", all_stocks, index=default_index, key="stock_selector_detail")
         st.session_state.selected_stock = selected_stock
         
         stock_data = df[df["Stock Code"] == selected_stock].copy()
@@ -248,8 +248,8 @@ with tab_chart:
         st.warning("Gagal memuat data.")
 
 with tab_screener:
-    st.header("Screener Saham Berdasarkan Lonjakan Volume & Value")
-    st.markdown("Cari saham yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
+    st.header("Screener Code Berdasarkan Lonjakan Volume & Value")
+    st.markdown("Cari Code yang menunjukkan **lonjakan volume/nilai hari ini** dibandingkan rata-rata 20 hari sebelumnya.")
     if not df.empty:
         latest_data_screener = df.loc[df.groupby('Stock Code')['Last Trading Date'].idxmax()].copy()
         filter_col1, filter_col2 = st.columns([2,1])
@@ -267,22 +267,22 @@ with tab_screener:
             final_condition = pd.concat(conditions, axis=1).any(axis=1)
             result_df = latest_data_screener[final_condition].copy()
             result_df.sort_values(by='Vol_Factor', ascending=False, inplace=True)
-            st.success(f"Ditemukan **{len(result_df)}** saham yang memenuhi kriteria.")
+            st.success(f"Ditemukan **{len(result_df)}** Code yang memenuhi kriteria.")
             
             screen_width = streamlit_js_eval(js_expressions='screen.width', key='SCR_WIDTH')
             is_mobile = (screen_width < 768) if screen_width is not None else False
             mobile_cols = ['Stock Code', 'Close', 'Change %', 'Vol_Factor']
             desktop_cols = ['Stock Code', 'Close', 'Change %', 'Volume', 'Vol_Factor', 'MA20_vol', 'Value', 'Val_Factor', 'MA20_val']
-            rename_cols = {'Stock Code': 'Saham', 'Vol_Factor': 'Vol x MA20', 'MA20_vol': 'Rata2 Vol 20D', 'Val_Factor': 'Val x MA20', 'MA20_val': 'Rata2 Val 20D'}
+            rename_cols = {'Stock Code': 'Code', 'Vol_Factor': 'Vol x MA20', 'MA20_vol': 'Rata2 Vol 20D', 'Val_Factor': 'Val x MA20', 'MA20_val': 'Rata2 Val 20D'}
             
             df_to_display_screener = result_df[desktop_cols if not is_mobile else mobile_cols].rename(columns=rename_cols)
             response_screener = create_interactive_table(df_to_display_screener, 'screener_table')
 
             if response_screener['selected_rows'] is not None and not response_screener['selected_rows'].empty:
-                selected_code = response_screener['selected_rows'].iloc[0]['Saham']
+                selected_code = response_screener['selected_rows'].iloc[0]['Code']
                 if st.session_state.selected_stock != selected_code:
                     st.session_state.selected_stock = selected_code
-                    st.warning(f"Saham {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
+                    st.warning(f"Code {st.session_state.selected_stock} dipilih. Silakan pindah ke tab 'Analisis Detail'.")
                     st.rerun()
         else:
             st.info("Pilih setidaknya satu kriteria di atas untuk memulai screening.")
