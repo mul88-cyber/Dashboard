@@ -39,7 +39,7 @@ def load_data():
     try:
         df = pd.read_csv(csv_url)
         df['Last Trading Date'] = pd.to_datetime(df['Last Trading Date'])
-        numeric_cols = ['Volume', 'Value', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency', 'Change', 'Previous', 'Change %', 'MA20_vol', 'MA20_val', 'Net Foreign Flow']
+        numeric_cols = ['Volume', 'Value', 'Close', 'Foreign Buy', 'Foreign Sell', 'Frequency', 'Change', 'Previous', 'Change %', 'MA20_vol', 'MA20_val', 'Net Foreign Flow', 'Money Flow Value']
         for col in numeric_cols:
              if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce')
         df.fillna(0, inplace=True)
@@ -65,9 +65,9 @@ def create_aligned_chart(data, x_axis_col, title):
         mode='lines+markers+text', customdata=data[['Change %']], hovertemplate='<b>%{x|%d %b %Y}</b><br>Harga: %{y:,.0f}<br>Change: %{customdata[0]:.2f}%<extra></extra>',
         line=dict(color='white', width=2), marker=dict(color=marker_colors_price, size=6, line=dict(width=1, color='white'))
     ), secondary_y=True, row=1, col=1)
-    marker_colors_ff = np.where(data['Net Foreign Flow'] >= 0, '#2ca02c', '#d62728')
+    marker_colors_mfv = np.where(data['Money Flow Value'] >= 0, '#2ca02c', '#d62728')
     fig.add_trace(go.Bar(
-        x=data[x_axis_col], y=data['Net Foreign Flow'], name='Net Foreign Flow', marker_color=marker_colors_ff, opacity=0.7
+        x=data[x_axis_col], y=data['Money Flow Value'], name='Money Flow Value', marker_color=marker_colors_mfv, opacity=0.7
     ), row=2, col=1)
     max_price, min_price, max_vol = (data['Close'].max(), data['Close'].min(), data['Volume'].max()) if not data.empty else (1, 0, 1)
     if max_price == min_price: price_range_min, price_range_max = (min_price * 0.95, max_price * 1.05)
@@ -80,7 +80,7 @@ def create_aligned_chart(data, x_axis_col, title):
     fig.update_xaxes(title_text="Tanggal", tickfont_size=12, row=2, col=1)
     fig.update_yaxes(title_text="Volume", secondary_y=False, row=1, col=1, title_font_size=14, tickfont_size=12, range=[0, max_vol * 1.05])
     fig.update_yaxes(title_text="Harga (Rp)", secondary_y=True, row=1, col=1, title_font_size=14, tickfont_size=12, showgrid=False, range=[price_range_min, price_range_max])
-    fig.update_yaxes(title_text="Net FF", row=2, col=1, title_font_size=14, tickfont_size=12)
+    fig.update_yaxes(title_text="Money Flow Value", row=2, col=1, title_font_size=14, tickfont_size=12)
     st.plotly_chart(fig, use_container_width=True)
 
 # --- Fungsi Tabel Interaktif ---
@@ -114,7 +114,6 @@ with tab_top25:
             perf_data = []
             for code, group in df.groupby('Stock Code'):
                 if group.empty or len(group) < 2: continue
-                
                 group = group.sort_values(by='Last Trading Date')
                 latest_row = group.iloc[-1]
                 latest_date_stock = latest_row['Last Trading Date']
@@ -215,11 +214,12 @@ with tab_chart:
                 if signal == "Distribusi": return "🔴 Distribusi"
                 return "⚪️ Netral"
             vol_factor = latest_day_data['Volume'] / latest_day_data['MA20_vol'] if latest_day_data['MA20_vol'] > 0 else 0
-            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
             kpi1.metric(label="Status Terkini", value=get_status_display(latest_day_data.get('Final Signal', 'N/A')))
             kpi2.metric(label="Net Foreign Flow", value=f"{latest_day_data.get('Net Foreign Flow', 0):,.0f}")
-            kpi3.metric(label="Lonjakan Volume (vs MA20)", value=f"{vol_factor:.1f}x")
-            kpi4.metric(label="Sektor", value=latest_day_data.get('Sector', 'N/A'))
+            kpi3.metric(label="Money Flow Value", value=f"{latest_day_data.get('Money Flow Value', 0):,.0f}")
+            kpi4.metric(label="Lonjakan Volume", value=f"{vol_factor:.1f}x")
+            kpi5.metric(label="Sektor", value=latest_day_data.get('Sector', 'N/A'))
             st.divider()
 
         if not stock_data.empty and 'Week' in stock_data.columns:
